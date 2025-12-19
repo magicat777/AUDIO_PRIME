@@ -1,0 +1,468 @@
+<script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
+  import { audioEngine } from '../../core/AudioEngine';
+  import { moduleVisibility } from '../../stores/moduleVisibility';
+
+  let canvas: HTMLCanvasElement;
+  let waterfallCanvas: HTMLCanvasElement;
+  let ctx: CanvasRenderingContext2D | null = null;
+  let waterfallCtx: CanvasRenderingContext2D | null = null;
+  let animationId: number | null = null;
+  let spectrum = new Float32Array(512);
+
+  // Bass frequency range for display
+  const MIN_FREQ = 20;
+  const MAX_FREQ = 200;
+
+  // Frequency labels for bass region
+  const FREQ_LABELS = [20, 30, 40, 50, 60, 80, 100, 120, 150, 200];
+
+  // The spectrum data is now 512 bars mapped logarithmically from 20Hz-20kHz
+  // Calculate which bars correspond to bass region (20-200Hz)
+  const TOTAL_BARS = 512;
+  const SPECTRUM_MIN_FREQ = 20;
+  const SPECTRUM_MAX_FREQ = 20000;
+
+  // Waterfall spectrogram settings
+  const WATERFALL_HISTORY = 150; // Number of history lines to display
+  let waterfallWidth = 0;
+  let waterfallHeight = 0;
+  let waterfallInitialized = false;
+  let waterfallRowImageData: ImageData | null = null; // Reused for performance
+
+  // Pre-computed color lookup table (256 entries, RGBA)
+  const COLOR_LUT = new Uint8Array(256 * 4);
+  (function buildColorLUT() {
+    for (let i = 0; i < 256; i++) {
+      const m = i / 255;
+      let r = 0, g = 0, b = 0;
+
+      if (m < 0.1) {
+        // Very low: dark background
+        const v = m * 10 * 30;
+        r = v; g = v; b = v * 1.5;
+      } else if (m < 0.3) {
+        // Low: blue to cyan
+        const t = (m - 0.1) / 0.2;
+        r = 0; g = t * 200; b = 100 + t * 155;
+      } else if (m < 0.5) {
+        // Medium-low: cyan to green
+        const t = (m - 0.3) / 0.2;
+        r = 0; g = 200 + t * 55; b = 255 - t * 155;
+      } else if (m < 0.7) {
+        // Medium: green to yellow
+        const t = (m - 0.5) / 0.2;
+        r = t * 255; g = 255; b = 100 - t * 100;
+      } else if (m < 0.9) {
+        // High: yellow to red
+        const t = (m - 0.7) / 0.2;
+        r = 255; g = 255 - t * 200; b = 0;
+      } else {
+        // Very high: red to white
+        const t = (m - 0.9) / 0.1;
+        r = 255; g = 55 + t * 200; b = t * 200;
+      }
+
+      const idx = i * 4;
+      COLOR_LUT[idx] = Math.floor(r);
+      COLOR_LUT[idx + 1] = Math.floor(g);
+      COLOR_LUT[idx + 2] = Math.floor(b);
+      COLOR_LUT[idx + 3] = 255; // Alpha
+    }
+  })();
+
+  // Find bar index for a given frequency (logarithmic mapping)
+  function freqToBar(freq: number): number {
+    const t = Math.log(freq / SPECTRUM_MIN_FREQ) / Math.log(SPECTRUM_MAX_FREQ / SPECTRUM_MIN_FREQ);
+    return Math.floor(t * (TOTAL_BARS - 1));
+  }
+
+  const BASS_START_BAR = freqToBar(MIN_FREQ);  // ~0
+  const BASS_END_BAR = freqToBar(MAX_FREQ);    // ~166 bars cover 20-200Hz
+  const BASS_BAR_COUNT = BASS_END_BAR - BASS_START_BAR + 1;
+
+
+  // Subscribe to spectrum data (now 0-1 normalized bar values)
+  const unsubscribe = audioEngine.spectrum.subscribe((data) => {
+    spectrum = data;
+  });
+
+  onMount(() => {
+    ctx = canvas.getContext('2d', { alpha: false });
+    waterfallCtx = waterfallCanvas.getContext('2d', { alpha: false });
+    if (!ctx || !waterfallCtx) return;
+
+    // Handle resize for main canvas
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        ctx!.scale(dpr, dpr);
+      }
+    });
+
+    // Handle resize for waterfall canvas
+    const waterfallResizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        const dpr = window.devicePixelRatio || 1;
+        waterfallCanvas.width = width * dpr;
+        waterfallCanvas.height = height * dpr;
+        waterfallCtx!.scale(dpr, dpr);
+        waterfallWidth = width;
+        waterfallHeight = height;
+        waterfallInitialized = false; // Reset on resize
+      }
+    });
+
+    resizeObserver.observe(canvas);
+    waterfallResizeObserver.observe(waterfallCanvas);
+
+    function render() {
+      if (!ctx) return;
+
+      const width = canvas.width / (window.devicePixelRatio || 1);
+      const height = canvas.height / (window.devicePixelRatio || 1);
+
+      // Clear
+      ctx.fillStyle = '#0a0a0f';
+      ctx.fillRect(0, 0, width, height);
+
+      // Drawing dimensions (must match SpectrumPanel margins)
+      const padding = { left: 45, right: 15, top: 20, bottom: 30 };
+      const graphWidth = width - padding.left - padding.right;
+      const graphHeight = height - padding.top - padding.bottom;
+
+      // Draw grid
+      ctx.strokeStyle = '#1a1f2c';
+      ctx.lineWidth = 1;
+
+      // Vertical frequency grid lines (logarithmic)
+      ctx.beginPath();
+      for (const freq of FREQ_LABELS) {
+        const x = padding.left + (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * graphWidth;
+        ctx.moveTo(x, padding.top);
+        ctx.lineTo(x, height - padding.bottom);
+      }
+      ctx.stroke();
+
+      // Horizontal dB grid lines
+      const dbLines = [-60, -48, -36, -24, -12, 0];
+      ctx.beginPath();
+      for (const db of dbLines) {
+        const y = padding.top + ((0 - db) / 60) * graphHeight;
+        ctx.moveTo(padding.left, y);
+        ctx.lineTo(width - padding.right, y);
+      }
+      ctx.stroke();
+
+      // Draw bass spectrum as filled area
+      ctx.beginPath();
+
+      // Start from bottom left
+      ctx.moveTo(padding.left, height - padding.bottom);
+
+      // Use bars from the processed spectrum that correspond to bass frequencies
+      const bassBarCount = BASS_END_BAR - BASS_START_BAR + 1;
+
+      for (let i = 0; i < bassBarCount; i++) {
+        const barIndex = BASS_START_BAR + i;
+        const normalizedIndex = i / (bassBarCount - 1);
+
+        // Get magnitude directly from processed spectrum (already 0-1 normalized)
+        const magnitude = barIndex < spectrum.length ? spectrum[barIndex] : 0;
+
+        // Calculate position
+        const x = padding.left + normalizedIndex * graphWidth;
+        const barHeight = magnitude * graphHeight;
+        const y = height - padding.bottom - barHeight;
+
+        if (i === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
+        }
+      }
+
+      // Complete the path
+      ctx.lineTo(width - padding.right, height - padding.bottom);
+      ctx.lineTo(padding.left, height - padding.bottom);
+      ctx.closePath();
+
+      // Gradient fill for bass
+      const gradient = ctx.createLinearGradient(0, padding.top, 0, height - padding.bottom);
+      gradient.addColorStop(0, 'rgba(139, 92, 246, 0.8)'); // Purple at top
+      gradient.addColorStop(0.3, 'rgba(239, 68, 68, 0.6)'); // Red
+      gradient.addColorStop(1, 'rgba(139, 92, 246, 0.1)'); // Fade at bottom
+      ctx.fillStyle = gradient;
+      ctx.fill();
+
+      // Draw outline
+      ctx.strokeStyle = 'rgba(139, 92, 246, 0.9)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+
+      for (let i = 0; i < bassBarCount; i++) {
+        const barIndex = BASS_START_BAR + i;
+        const normalizedIndex = i / (bassBarCount - 1);
+
+        // Get magnitude directly from processed spectrum (already 0-1 normalized)
+        const magnitude = barIndex < spectrum.length ? spectrum[barIndex] : 0;
+
+        const x = padding.left + normalizedIndex * graphWidth;
+        const barHeight = magnitude * graphHeight;
+        const y = height - padding.bottom - barHeight;
+
+        if (i === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
+        }
+      }
+      ctx.stroke();
+
+      // Draw frequency labels
+      ctx.fillStyle = '#606060';
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+
+      for (const freq of FREQ_LABELS) {
+        const x = padding.left + (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * graphWidth;
+        ctx.fillText(`${freq}`, x, height - padding.bottom + 5);
+      }
+
+      // Draw dB labels
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+
+      for (const db of dbLines) {
+        const y = padding.top + ((0 - db) / 60) * graphHeight;
+        ctx.fillText(`${db}`, padding.left - 5, y);
+      }
+
+      // Draw title
+      ctx.fillStyle = '#a0a0a0';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText('BASS DETAIL (20-200Hz)', padding.left, 3);
+
+      // === WATERFALL SPECTROGRAM (Optimized) ===
+      if (waterfallCtx && waterfallWidth > 0 && waterfallHeight > 0) {
+        const dpr = window.devicePixelRatio || 1;
+        const wfPadding = { left: 45, right: 15, top: 15, bottom: 5 };
+        const wfGraphWidth = waterfallWidth - wfPadding.left - wfPadding.right;
+        const wfGraphHeight = waterfallHeight - wfPadding.top - wfPadding.bottom;
+        const lineHeight = Math.max(1, Math.floor(wfGraphHeight / WATERFALL_HISTORY));
+        const pixelWidth = Math.floor(wfGraphWidth);
+
+        // Initialize waterfall on first run or after resize
+        if (!waterfallInitialized) {
+          waterfallCtx.fillStyle = '#0a0a0f';
+          waterfallCtx.fillRect(0, 0, waterfallWidth, waterfallHeight);
+
+          // Pre-allocate ImageData for row rendering
+          const rowWidthPxInit = Math.floor(wfGraphWidth * dpr);
+          const rowHeightPxInit = Math.max(1, Math.floor(lineHeight * dpr));
+          waterfallRowImageData = waterfallCtx.createImageData(rowWidthPxInit, rowHeightPxInit);
+
+          // Draw static labels (only on init/resize)
+          waterfallCtx.fillStyle = '#606060';
+          waterfallCtx.font = '9px monospace';
+          waterfallCtx.textAlign = 'center';
+          waterfallCtx.textBaseline = 'top';
+
+          const wfFreqLabels = [20, 40, 60, 100, 150, 200];
+          for (const freq of wfFreqLabels) {
+            const x = wfPadding.left + (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * wfGraphWidth;
+            waterfallCtx.fillText(`${freq}`, x, 2);
+          }
+
+          // Time indicators
+          waterfallCtx.fillStyle = '#505050';
+          waterfallCtx.textAlign = 'right';
+          waterfallCtx.textBaseline = 'middle';
+          waterfallCtx.fillText('now', wfPadding.left - 3, wfPadding.top + 5);
+          waterfallCtx.fillText(`-${Math.round(WATERFALL_HISTORY / 60)}s`, wfPadding.left - 3, waterfallHeight - wfPadding.bottom - 5);
+
+          waterfallInitialized = true;
+        }
+
+        // OPTIMIZATION: Scroll existing content down by one line height
+        // This copies the existing waterfall and shifts it down, avoiding full redraw
+        const srcY = wfPadding.top;
+        const srcH = wfGraphHeight - lineHeight;
+        if (srcH > 0) {
+          // Save the current transform, reset for pixel-perfect copy
+          waterfallCtx.save();
+          waterfallCtx.setTransform(1, 0, 0, 1, 0, 0);
+
+          // Copy existing content down (in device pixels)
+          const srcYPx = Math.floor(srcY * dpr);
+          const dstYPx = Math.floor((srcY + lineHeight) * dpr);
+          const srcHPx = Math.floor(srcH * dpr);
+          const leftPx = Math.floor(wfPadding.left * dpr);
+          const widthPx = Math.floor(wfGraphWidth * dpr);
+
+          waterfallCtx.drawImage(
+            waterfallCanvas,
+            leftPx, srcYPx, widthPx, srcHPx,  // Source rect
+            leftPx, dstYPx, widthPx, srcHPx   // Dest rect
+          );
+
+          waterfallCtx.restore();
+        }
+
+        // Draw only the new top row using ImageData (fast pixel manipulation)
+        // Note: ImageData works in device pixels, ignoring canvas transforms
+        if (!waterfallRowImageData) return;
+        const rowWidthPx = waterfallRowImageData.width;
+        const rowHeightPx = waterfallRowImageData.height;
+        const pixels = waterfallRowImageData.data;
+
+        for (let x = 0; x < rowWidthPx; x++) {
+          // Map pixel x to frequency bin
+          const binIndex = Math.floor((x / rowWidthPx) * BASS_BAR_COUNT);
+          const barIndex = BASS_START_BAR + binIndex;
+          const magnitude = barIndex < spectrum.length ? spectrum[barIndex] : 0;
+
+          // Convert magnitude to LUT index (0-255)
+          const lutIndex = Math.floor(Math.max(0, Math.min(1, magnitude)) * 255) * 4;
+
+          // Fill all pixels in this column for the line height
+          for (let y = 0; y < rowHeightPx; y++) {
+            const pixelIndex = (y * rowWidthPx + x) * 4;
+            pixels[pixelIndex] = COLOR_LUT[lutIndex];         // R
+            pixels[pixelIndex + 1] = COLOR_LUT[lutIndex + 1]; // G
+            pixels[pixelIndex + 2] = COLOR_LUT[lutIndex + 2]; // B
+            pixels[pixelIndex + 3] = 255;                     // A
+          }
+        }
+
+        // Put the new row at the top of the waterfall area (in device pixels)
+        const leftPx = Math.floor(wfPadding.left * dpr);
+        const topPx = Math.floor(wfPadding.top * dpr);
+        waterfallCtx.putImageData(waterfallRowImageData, leftPx, topPx);
+      }
+
+      animationId = requestAnimationFrame(render);
+    }
+
+    render();
+
+    return () => {
+      resizeObserver.disconnect();
+      waterfallResizeObserver.disconnect();
+    };
+  });
+
+  onDestroy(() => {
+    unsubscribe();
+    if (animationId !== null) {
+      cancelAnimationFrame(animationId);
+    }
+  });
+</script>
+
+<div class="bass-panel">
+  <div class="bass-graph" class:expanded={!$moduleVisibility.waterfall}>
+    <canvas bind:this={canvas}></canvas>
+  </div>
+  <div class="waterfall-section" class:hidden={!$moduleVisibility.waterfall}>
+    <div class="waterfall-header">
+      <span class="waterfall-title">WATERFALL</span>
+      <span class="waterfall-legend">
+        <span class="legend-low"></span>
+        <span class="legend-mid"></span>
+        <span class="legend-high"></span>
+      </span>
+    </div>
+    <canvas bind:this={waterfallCanvas}></canvas>
+  </div>
+</div>
+
+<style>
+  .bass-panel {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-panel);
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+  }
+
+  .bass-graph {
+    flex: 1;
+    min-height: 120px;
+  }
+
+  .bass-graph.expanded {
+    flex: 2;
+  }
+
+  .bass-graph canvas {
+    width: 100%;
+    height: 100%;
+  }
+
+  .waterfall-section {
+    flex: 1;
+    min-height: 100px;
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .waterfall-section.hidden {
+    display: none;
+  }
+
+  .waterfall-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.25rem 0.5rem;
+    background: rgba(0, 0, 0, 0.2);
+  }
+
+  .waterfall-title {
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+  }
+
+  .waterfall-legend {
+    display: flex;
+    gap: 2px;
+    height: 8px;
+  }
+
+  .legend-low, .legend-mid, .legend-high {
+    width: 20px;
+    height: 100%;
+    border-radius: 1px;
+  }
+
+  .legend-low {
+    background: linear-gradient(90deg, #000020, #00c8ff);
+  }
+
+  .legend-mid {
+    background: linear-gradient(90deg, #00ff64, #ffff00);
+  }
+
+  .legend-high {
+    background: linear-gradient(90deg, #ff8800, #ffffff);
+  }
+
+  .waterfall-section canvas {
+    flex: 1;
+    width: 100%;
+  }
+</style>
