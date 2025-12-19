@@ -7,15 +7,9 @@ const SAMPLE_RATE = 48000;
 const FFT_SIZE = 4096;
 
 // Perceptual frequency band distribution (matches OMEGA)
-// Note: Currently using logarithmic mapping, this is for reference
-const _BAND_DISTRIBUTION = {
-  subBass: { range: [20, 60], percent: 0.08 },     // 8% of bars
-  bass: { range: [60, 250], percent: 0.17 },       // 17% of bars
-  lowMid: { range: [250, 500], percent: 0.15 },    // 15% of bars
-  mid: { range: [500, 2000], percent: 0.25 },      // 25% of bars
-  highMid: { range: [2000, 6000], percent: 0.20 }, // 20% of bars
-  high: { range: [6000, 20000], percent: 0.15 },   // 15% of bars
-};
+// Note: Currently using logarithmic mapping with these approximate band weights:
+// subBass 20-60Hz (8%), bass 60-250Hz (17%), lowMid 250-500Hz (15%)
+// mid 500-2kHz (25%), highMid 2-6kHz (20%), high 6-20kHz (15%)
 
 // Frequency compensation in dB domain for balanced visual display
 // Goal: Flatten the natural frequency response of music for even visual display
@@ -57,11 +51,12 @@ function getFrequencyCompensation(freq: number): number {
 // Psychoacoustic emphasis for musically important frequencies
 // These ADD to the base compensation curve for perceptually important bands
 const PSYCHOACOUSTIC_WEIGHTS = {
-  kickDrum: { range: [60, 120], weight: 1.25 },      // Kick punch (+1.9dB)
-  voiceFundamental: { range: [150, 400], weight: 1.3 }, // Vocal body/chest (+2.3dB)
+  subBass: { range: [20, 60], weight: 1.2 },         // Sub-bass feel (+1.6dB)
+  kickDrum: { range: [55, 100], weight: 1.3 },       // Kick punch (+2.3dB)
+  bassBody: { range: [80, 200], weight: 1.45 },      // Bass guitar/body (+3.2dB) - fills gap
+  voiceFundamental: { range: [180, 400], weight: 1.3 }, // Vocal body/chest (+2.3dB)
   voiceClarity: { range: [1000, 3000], weight: 1.4 }, // Vocal clarity/formants (+2.9dB)
   presence: { range: [3000, 6000], weight: 1.5 },    // Presence/articulation (+3.5dB)
-  subBass: { range: [20, 60], weight: 1.2 },         // Sub-bass feel (+1.6dB)
   air: { range: [8000, 12000], weight: 1.2 },        // Air/breathiness (+1.6dB)
 };
 

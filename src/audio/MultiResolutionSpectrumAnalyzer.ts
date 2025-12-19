@@ -5,9 +5,7 @@
  * Each frequency band uses the FFT size that provides optimal resolution for that range.
  */
 
-const _SAMPLE_RATE = 48000; // eslint-disable-line @typescript-eslint/no-unused-vars
-
-// Band configurations matching FFTWorker
+// Band configurations matching FFTWorker (sample rate: 48000Hz)
 const BAND_CONFIGS = {
   subBass: { minFreq: 20, maxFreq: 60, fftSize: 8192 },
   bass: { minFreq: 60, maxFreq: 250, fftSize: 4096 },
@@ -37,12 +35,13 @@ function getFrequencyCompensationDB(freq: number): number {
 
 // Psychoacoustic weights (matching SpectrumAnalyzer)
 const PSYCHOACOUSTIC_WEIGHTS = {
-  kickDrum: { range: [60, 120], weight: 1.25 },
-  voiceFundamental: { range: [150, 400], weight: 1.3 },
-  voiceClarity: { range: [1000, 3000], weight: 1.4 },
-  presence: { range: [3000, 6000], weight: 1.5 },
-  subBass: { range: [20, 60], weight: 1.2 },
-  air: { range: [8000, 12000], weight: 1.2 },
+  subBass: { range: [20, 60], weight: 1.2 },         // Sub-bass feel (+1.6dB)
+  kickDrum: { range: [55, 100], weight: 1.3 },       // Kick punch (+2.3dB)
+  bassBody: { range: [80, 200], weight: 1.45 },      // Bass guitar/body (+3.2dB) - fills gap
+  voiceFundamental: { range: [180, 400], weight: 1.3 }, // Vocal body/chest (+2.3dB)
+  voiceClarity: { range: [1000, 3000], weight: 1.4 }, // Vocal clarity/formants (+2.9dB)
+  presence: { range: [3000, 6000], weight: 1.5 },    // Presence/articulation (+3.5dB)
+  air: { range: [8000, 12000], weight: 1.2 },        // Air/breathiness (+1.6dB)
 };
 
 export interface MultiResolutionBands {

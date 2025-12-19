@@ -1,3 +1,9 @@
+// Fix for AppImage sandbox issue on Linux MUST come before Electron import
+// AppImages mount in /tmp and can't use the SUID sandbox
+if (process.env.APPIMAGE || process.platform === 'linux') {
+  process.argv.push('--no-sandbox');
+}
+
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { join } from 'path';
 import { spawn, ChildProcess } from 'child_process';

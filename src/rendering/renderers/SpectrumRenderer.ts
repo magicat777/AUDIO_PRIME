@@ -22,10 +22,12 @@ uniform float uMaxHeight;
 uniform float uBaseY;
 uniform float uMarginLeft;
 uniform float uMarginRight;
+uniform float uMirror; // 0.0 = normal (top half), 1.0 = mirrored (bottom half)
 
 out float vMagnitude;
 out float vBarIndex;
 out vec2 vUV;
+out float vMirror;
 
 void main() {
   // Calculate graph area (respecting margins)
@@ -38,7 +40,14 @@ void main() {
   // Transform quad vertex
   vec2 pos = aPosition;
   pos.x = barX + pos.x * uBarWidth;
-  pos.y = uBaseY - pos.y * barHeight;
+
+  if (uMirror < 0.5) {
+    // Top half: bars grow upward from baseY (middle line)
+    pos.y = uBaseY - pos.y * barHeight;
+  } else {
+    // Bottom half: bars grow downward from baseY (middle line)
+    pos.y = uBaseY + pos.y * barHeight;
+  }
 
   // Convert to clip space (-1 to 1)
   vec2 clipPos = (pos / uResolution) * 2.0 - 1.0;
@@ -49,6 +58,7 @@ void main() {
   vMagnitude = aMagnitude;
   vBarIndex = aBarIndex;
   vUV = aPosition;
+  vMirror = uMirror;
 }
 `;
 
@@ -59,6 +69,7 @@ precision highp float;
 in float vMagnitude;
 in float vBarIndex;
 in vec2 vUV;
+in float vMirror;
 
 uniform float uBarCount;
 uniform float uTime;
@@ -101,11 +112,17 @@ vec3 getSpectrumColor(float normalizedIndex) {
   return color;
 }
 
+// Desaturate color by mixing with grayscale
+vec3 desaturate(vec3 color, float amount) {
+  float gray = dot(color, vec3(0.299, 0.587, 0.114));
+  return mix(color, vec3(gray), amount);
+}
+
 void main() {
   float normalizedIndex = vBarIndex / uBarCount;
   vec3 baseColor = getSpectrumColor(normalizedIndex);
 
-  // Vertical gradient (brighter at top)
+  // Vertical gradient (brighter at top of each bar)
   float verticalGradient = 0.6 + 0.4 * vUV.y;
 
   // Intensity based on magnitude
@@ -116,6 +133,14 @@ void main() {
   // Add slight glow effect for higher magnitudes
   if (vMagnitude > 0.7) {
     finalColor += baseColor * (vMagnitude - 0.7) * 0.3;
+  }
+
+  // Apply subtle color variation for bottom half (R channel)
+  // Slightly cooler/desaturated to distinguish from top half
+  if (vMirror > 0.5) {
+    // Shift toward cooler tones and reduce saturation slightly
+    finalColor = desaturate(finalColor, 0.15);
+    finalColor *= vec3(0.92, 0.95, 1.05); // Slight blue shift
   }
 
   fragColor = vec4(finalColor, 1.0);
@@ -157,6 +182,7 @@ export class SpectrumRenderer {
     time: WebGLUniformLocation | null;
     marginLeft: WebGLUniformLocation | null;
     marginRight: WebGLUniformLocation | null;
+    mirror: WebGLUniformLocation | null;
   };
 
   constructor(gl: WebGL2RenderingContext, width: number, height: number, barCount = 512) {
@@ -191,6 +217,7 @@ export class SpectrumRenderer {
       time: gl.getUniformLocation(this.program, 'uTime'),
       marginLeft: gl.getUniformLocation(this.program, 'uMarginLeft'),
       marginRight: gl.getUniformLocation(this.program, 'uMarginRight'),
+      mirror: gl.getUniformLocation(this.program, 'uMirror'),
     };
 
     // Create VAO
@@ -291,8 +318,11 @@ export class SpectrumRenderer {
 
     const barWidth = (graphWidth / this.barCount) * 1.02;  // Slightly overlap to prevent gaps
     const barGap = 0;  // No gap needed with overlapping bars
-    const maxHeight = graphHeight;  // Bars can fill the entire graph height
-    const baseY = this.height - marginBottom;  // Bottom of graph area
+
+    // For mirrored stereo display: bars grow from center line
+    // maxHeight is half the graph so each direction (up/down) uses half
+    const maxHeight = graphHeight / 2;
+    const baseY = marginTop + graphHeight / 2;  // Center line of graph area
 
     gl.uniform2f(this.uniforms.resolution, this.width, this.height);
     gl.uniform1f(this.uniforms.barCount, this.barCount);
@@ -357,10 +387,18 @@ export class SpectrumRenderer {
     // Update time uniform
     gl.uniform1f(this.uniforms.time, now / 1000);
 
-    // Draw bars
+    // Draw bars for both halves (mirrored stereo display)
     gl.useProgram(this.program);
     gl.bindVertexArray(this.vao);
+
+    // Draw top half (bars grow upward from center) - 0dB at top
+    gl.uniform1f(this.uniforms.mirror, 0.0);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.barCount);
+
+    // Draw bottom half (bars grow downward from center) - mirrored
+    gl.uniform1f(this.uniforms.mirror, 1.0);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.barCount);
+
     gl.bindVertexArray(null);
 
     // Draw peak hold indicators using 2D canvas overlay

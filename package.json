@@ -2,6 +2,7 @@
   "name": "audio-prime",
   "version": "1.0.0",
   "description": "Professional web-based audio spectrum analyzer with full OMEGA feature parity",
+  "homepage": "https://github.com/jason-holt/audio-prime",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -28,7 +29,10 @@
     "lufs",
     "metering"
   ],
-  "author": "Jason Holt",
+  "author": {
+    "name": "Jason Holt",
+    "email": "jason-holt@users.noreply.github.com"
+  },
   "license": "MIT",
   "dependencies": {
     "comlink": "^4.4.1",
@@ -69,7 +73,9 @@
         "AppImage",
         "deb"
       ],
-      "category": "AudioVideo"
+      "icon": "assets/icon.png",
+      "category": "AudioVideo",
+      "maintainer": "Jason Holt <jason-holt@users.noreply.github.com>"
     },
     "mac": {
       "target": "dmg"

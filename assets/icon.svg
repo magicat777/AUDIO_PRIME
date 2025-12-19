@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <!-- Background gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#0a0a14"/>
+    </linearGradient>
+
+    <!-- Spectrum gradient for top half -->
+    <linearGradient id="spectrumTop" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#8b5cf6"/>
+      <stop offset="20%" style="stop-color:#ef4444"/>
+      <stop offset="40%" style="stop-color:#f59e0b"/>
+      <stop offset="55%" style="stop-color:#22c55e"/>
+      <stop offset="75%" style="stop-color:#06b6d4"/>
+      <stop offset="100%" style="stop-color:#3b82f6"/>
+    </linearGradient>
+
+    <!-- Spectrum gradient for bottom half (cooler) -->
+    <linearGradient id="spectrumBottom" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#7c4ddb"/>
+      <stop offset="20%" style="stop-color:#dc3545"/>
+      <stop offset="40%" style="stop-color:#e09000"/>
+      <stop offset="55%" style="stop-color:#1eb050"/>
+      <stop offset="75%" style="stop-color:#05a0b8"/>
+      <stop offset="100%" style="stop-color:#3575e0"/>
+    </linearGradient>
+
+    <!-- Glow effect -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="250" fill="url(#bgGrad)" stroke="#2a3050" stroke-width="4"/>
+
+  <!-- Inner ring accent -->
+  <circle cx="256" cy="256" r="230" fill="none" stroke="#4a9eff" stroke-width="1" opacity="0.3"/>
+
+  <!-- Center divider line -->
+  <line x1="56" y1="256" x2="456" y2="256" stroke="#4a9eff" stroke-width="2" opacity="0.6" filter="url(#glow)"/>
+
+  <!-- Spectrum bars - Top half (growing upward from center) -->
+  <g fill="url(#spectrumTop)" filter="url(#glow)">
+    <!-- Bar heights represent a typical spectrum shape -->
+    <rect x="70" y="176" width="18" height="80" rx="2"/>
+    <rect x="95" y="146" width="18" height="110" rx="2"/>
+    <rect x="120" y="116" width="18" height="140" rx="2"/>
+    <rect x="145" y="96" width="18" height="160" rx="2"/>
+    <rect x="170" y="126" width="18" height="130" rx="2"/>
+    <rect x="195" y="146" width="18" height="110" rx="2"/>
+    <rect x="220" y="136" width="18" height="120" rx="2"/>
+    <rect x="245" y="116" width="18" height="140" rx="2"/>
+    <rect x="270" y="126" width="18" height="130" rx="2"/>
+    <rect x="295" y="146" width="18" height="110" rx="2"/>
+    <rect x="320" y="166" width="18" height="90" rx="2"/>
+    <rect x="345" y="176" width="18" height="80" rx="2"/>
+    <rect x="370" y="186" width="18" height="70" rx="2"/>
+    <rect x="395" y="196" width="18" height="60" rx="2"/>
+    <rect x="420" y="206" width="18" height="50" rx="2"/>
+  </g>
+
+  <!-- Spectrum bars - Bottom half (mirrored, growing downward from center) -->
+  <g fill="url(#spectrumBottom)" filter="url(#glow)">
+    <rect x="70" y="256" width="18" height="80" rx="2"/>
+    <rect x="95" y="256" width="18" height="110" rx="2"/>
+    <rect x="120" y="256" width="18" height="140" rx="2"/>
+    <rect x="145" y="256" width="18" height="160" rx="2"/>
+    <rect x="170" y="256" width="18" height="130" rx="2"/>
+    <rect x="195" y="256" width="18" height="110" rx="2"/>
+    <rect x="220" y="256" width="18" height="120" rx="2"/>
+    <rect x="245" y="256" width="18" height="140" rx="2"/>
+    <rect x="270" y="256" width="18" height="130" rx="2"/>
+    <rect x="295" y="256" width="18" height="110" rx="2"/>
+    <rect x="320" y="256" width="18" height="90" rx="2"/>
+    <rect x="345" y="256" width="18" height="80" rx="2"/>
+    <rect x="370" y="256" width="18" height="70" rx="2"/>
+    <rect x="395" y="256" width="18" height="60" rx="2"/>
+    <rect x="420" y="256" width="18" height="50" rx="2"/>
+  </g>
+
+  <!-- L/R channel indicators -->
+  <text x="56" y="100" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#4a9eff" opacity="0.8">L</text>
+  <text x="56" y="430" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#4a9eff" opacity="0.8">R</text>
+</svg>

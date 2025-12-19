@@ -15,8 +15,11 @@
   const MIN_FREQ = 20;
   const MAX_FREQ = 20000;
 
-  // dB scale configuration
-  const DB_LABELS = [0, -12, -24, -36, -48, -60];
+  // dB scale configuration for mirrored stereo display
+  // Top half: 0dB at top, -60dB at center
+  // Bottom half: -60dB at center, 0dB at bottom
+  const DB_LABELS_TOP = [0, -12, -24, -36, -48, -60];
+  const DB_LABELS_BOTTOM = [-48, -36, -24, -12, 0];
 
   $: if (canvas && width > 0 && height > 0 && fftMode) {
     drawScales();
@@ -66,14 +69,58 @@
       ctx.fillText(String(FREQ_LABELS[i]), x, height - margin.bottom + 5);
     }
 
-    // Draw dB grid lines and labels
+    // Draw dB grid lines and labels for mirrored stereo display
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
 
-    for (const db of DB_LABELS) {
-      // Map dB to vertical position (0dB at top, -60dB at bottom)
+    const centerY = margin.top + graphHeight / 2;
+    const halfHeight = graphHeight / 2;
+
+    // Top half: 0dB at top, -60dB at center
+    for (const db of DB_LABELS_TOP) {
+      // Map dB to vertical position (0dB at top of graph, -60dB at center)
       const normalizedDb = (0 - db) / 60; // 0 to 1
-      const y = margin.top + normalizedDb * graphHeight;
+      const y = margin.top + normalizedDb * halfHeight;
+
+      // Grid line
+      ctx.beginPath();
+      ctx.moveTo(margin.left, y);
+      ctx.lineTo(width - margin.right, y);
+      ctx.stroke();
+
+      // Label (skip -60 as it will be drawn as center line)
+      if (db !== -60) {
+        ctx.fillText(`${db}`, margin.left - 5, y);
+      }
+    }
+
+    // Center line at -60dB (emphasized with glow effect)
+    // Draw glow layer first
+    ctx.strokeStyle = 'rgba(74, 158, 255, 0.3)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(margin.left, centerY);
+    ctx.lineTo(width - margin.right, centerY);
+    ctx.stroke();
+
+    // Draw main center line
+    ctx.strokeStyle = 'rgba(74, 158, 255, 0.7)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(margin.left, centerY);
+    ctx.lineTo(width - margin.right, centerY);
+    ctx.stroke();
+
+    ctx.fillStyle = '#606060';
+    ctx.fillText('-60', margin.left - 5, centerY);
+    ctx.strokeStyle = 'rgba(42, 48, 64, 0.5)';
+    ctx.lineWidth = 1;
+
+    // Bottom half: -60dB at center, 0dB at bottom (mirrored)
+    for (const db of DB_LABELS_BOTTOM) {
+      // Map dB to vertical position (mirrored: -60dB at center, 0dB at bottom)
+      const normalizedDb = (60 + db) / 60; // 0 to 1 (from center down)
+      const y = centerY + normalizedDb * halfHeight;
 
       // Grid line
       ctx.beginPath();
@@ -101,6 +148,20 @@
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillText('Hz', width - margin.right, height - margin.bottom + 15);
+
+    // Channel labels (L/R) for stereo display
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'right';
+
+    // Left channel label (top half)
+    ctx.fillStyle = 'rgba(74, 158, 255, 0.6)';
+    ctx.textBaseline = 'top';
+    ctx.fillText('L', width - margin.right - 5, margin.top + 5);
+
+    // Right channel label (bottom half)
+    ctx.fillStyle = 'rgba(74, 158, 255, 0.6)';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('R', width - margin.right - 5, height - margin.bottom - 5);
   }
 
   onMount(() => {

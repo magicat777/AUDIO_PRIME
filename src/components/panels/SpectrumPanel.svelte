@@ -45,7 +45,7 @@
   const MARGIN_TOP = 20;
   const MARGIN_BOTTOM = 30;
 
-  // Draw peak hold indicators on 2D overlay
+  // Draw peak hold indicators on 2D overlay (mirrored for stereo display)
   function drawPeakHold() {
     if (!peakCtx) return;
 
@@ -74,12 +74,12 @@
     const graphWidth = width - marginLeft - marginRight;
     const graphHeight = height - marginTop - marginBottom;
 
-    // Match WebGL renderer settings
-    const maxHeight = graphHeight;
-    const baseY = height - marginBottom;
+    // Match WebGL renderer settings for mirrored display
+    const halfHeight = graphHeight / 2;
+    const centerY = marginTop + halfHeight;  // Center line of graph
     const barWidth = graphWidth / barCount;
 
-    // Draw peak indicators as small horizontal lines above each bar
+    // Draw peak indicators as small horizontal lines
     peakCtx.fillStyle = 'rgba(255, 255, 255, 0.95)';
 
     for (let i = 0; i < barCount; i++) {
@@ -87,9 +87,14 @@
 
       if (peakValue > 0.02) {
         const x = marginLeft + i * barWidth;
-        const y = baseY - peakValue * maxHeight;
-        // Draw a small horizontal bar at peak position
-        peakCtx.fillRect(x, y - 2, barWidth * 0.98, 2);
+
+        // Top half: peak indicator grows upward from center
+        const yTop = centerY - peakValue * halfHeight;
+        peakCtx.fillRect(x, yTop - 2, barWidth * 0.98, 2);
+
+        // Bottom half: peak indicator grows downward from center (mirrored)
+        const yBottom = centerY + peakValue * halfHeight;
+        peakCtx.fillRect(x, yBottom, barWidth * 0.98, 2);
       }
     }
   }
