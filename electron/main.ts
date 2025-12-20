@@ -12,6 +12,8 @@ import { promisify } from 'util';
 import { createServer, Server, IncomingMessage, ServerResponse } from 'http';
 import { createHash, randomBytes } from 'crypto';
 import { URL } from 'url';
+import * as os from 'os';
+import * as fs from 'fs';
 
 const execAsync = promisify(exec);
 
@@ -31,6 +33,9 @@ let spotifyTokens: {
   expiresAt: number;
 } | null = null;
 let lastTrackId: string | null = null;
+
+// CPU usage tracking
+let previousCpuInfo: { idle: number; total: number } | null = null;
 
 // Spotify configuration
 const SPOTIFY_CONFIG = {
@@ -229,6 +234,192 @@ ipcMain.handle(IPC.WINDOW_FULLSCREEN, () => {
     return mainWindow.isFullScreen();
   }
   return false;
+});
+
+// ============================================
+// System Metrics (CPU/GPU)
+// ============================================
+
+/**
+ * Calculate CPU usage percentage
+ */
+function getCpuUsage(): number {
+  const cpus = os.cpus();
+  let totalIdle = 0;
+  let totalTick = 0;
+
+  for (const cpu of cpus) {
+    for (const type in cpu.times) {
+      totalTick += cpu.times[type as keyof typeof cpu.times];
+    }
+    totalIdle += cpu.times.idle;
+  }
+
+  const currentInfo = { idle: totalIdle, total: totalTick };
+
+  if (previousCpuInfo === null) {
+    previousCpuInfo = currentInfo;
+    return 0;
+  }
+
+  const idleDiff = currentInfo.idle - previousCpuInfo.idle;
+  const totalDiff = currentInfo.total - previousCpuInfo.total;
+  previousCpuInfo = currentInfo;
+
+  if (totalDiff === 0) return 0;
+  return Math.round((1 - idleDiff / totalDiff) * 100);
+}
+
+/**
+ * Get GPU usage percentage (Linux-specific)
+ * Tries AMD sysfs first, then nvidia-smi
+ */
+async function getGpuUsage(): Promise<number> {
+  // Try AMD GPU (sysfs interface)
+  try {
+    const amdPath = '/sys/class/drm/card0/device/gpu_busy_percent';
+    if (fs.existsSync(amdPath)) {
+      const value = fs.readFileSync(amdPath, 'utf8').trim();
+      return parseInt(value, 10) || 0;
+    }
+  } catch {
+    // AMD GPU not available or no permission
+  }
+
+  // Try NVIDIA GPU (nvidia-smi)
+  try {
+    const { stdout } = await execAsync('nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null');
+    const value = parseInt(stdout.trim(), 10);
+    if (!isNaN(value)) return value;
+  } catch {
+    // nvidia-smi not available
+  }
+
+  // Try Intel GPU (intel_gpu_top format)
+  try {
+    const intelPath = '/sys/class/drm/card0/gt/gt0/rps_act_freq_mhz';
+    if (fs.existsSync(intelPath)) {
+      // Intel doesn't expose percentage directly, return 0 for now
+      return 0;
+    }
+  } catch {
+    // Intel GPU not available
+  }
+
+  return 0; // No GPU info available
+}
+
+ipcMain.handle('system:metrics', async () => {
+  const cpuPercent = getCpuUsage();
+  const gpuPercent = await getGpuUsage();
+  return { cpuPercent, gpuPercent };
+});
+
+// ============================================
+// Audio Source Metadata
+// ============================================
+
+interface AudioSourceInfo {
+  sampleRate: number;
+  bitDepth: number;
+  channels: number;
+  format: string;
+  applicationName: string;
+  latencyMs: number;
+  available: boolean;
+}
+
+let cachedAudioInfo: AudioSourceInfo | null = null;
+let lastAudioInfoFetch = 0;
+const AUDIO_INFO_CACHE_MS = 1000; // Cache for 1 second
+
+/**
+ * Get audio source metadata from PulseAudio/PipeWire
+ */
+async function getAudioSourceInfo(): Promise<AudioSourceInfo> {
+  const now = Date.now();
+
+  // Return cached value if fresh
+  if (cachedAudioInfo && (now - lastAudioInfoFetch) < AUDIO_INFO_CACHE_MS) {
+    return cachedAudioInfo;
+  }
+
+  const defaultInfo: AudioSourceInfo = {
+    sampleRate: 0,
+    bitDepth: 0,
+    channels: 0,
+    format: 'Unknown',
+    applicationName: 'None',
+    latencyMs: 0,
+    available: false,
+  };
+
+  try {
+    const { stdout } = await execAsync('pactl list sink-inputs 2>/dev/null');
+
+    // Parse sink-input info - look for active audio streams
+    const sinkInputs = stdout.split('Sink Input #');
+
+    for (const input of sinkInputs) {
+      if (!input.trim()) continue;
+
+      // Extract sample specification (e.g., "float32le 2ch 44100Hz")
+      const sampleSpecMatch = input.match(/Sample Specification:\s*(\S+)\s+(\d+)ch\s+(\d+)Hz/);
+
+      // Extract application name
+      const appNameMatch = input.match(/application\.name\s*=\s*"([^"]+)"/);
+
+      // Extract node latency (e.g., "8192/44100")
+      const latencyMatch = input.match(/node\.latency\s*=\s*"(\d+)\/(\d+)"/);
+
+      if (sampleSpecMatch) {
+        const format = sampleSpecMatch[1];
+        const channels = parseInt(sampleSpecMatch[2], 10);
+        const sampleRate = parseInt(sampleSpecMatch[3], 10);
+
+        // Determine bit depth from format
+        let bitDepth = 16;
+        if (format.includes('32')) bitDepth = 32;
+        else if (format.includes('24')) bitDepth = 24;
+        else if (format.includes('16')) bitDepth = 16;
+        else if (format.includes('8')) bitDepth = 8;
+
+        // Calculate latency in ms
+        let latencyMs = 0;
+        if (latencyMatch) {
+          const samples = parseInt(latencyMatch[1], 10);
+          const rate = parseInt(latencyMatch[2], 10);
+          latencyMs = (samples / rate) * 1000;
+        }
+
+        cachedAudioInfo = {
+          sampleRate,
+          bitDepth,
+          channels,
+          format: format.toUpperCase(),
+          applicationName: appNameMatch ? appNameMatch[1] : 'Unknown',
+          latencyMs,
+          available: true,
+        };
+        lastAudioInfoFetch = now;
+        return cachedAudioInfo;
+      }
+    }
+
+    // No active sink-inputs found
+    cachedAudioInfo = defaultInfo;
+    lastAudioInfoFetch = now;
+    return defaultInfo;
+  } catch {
+    // pactl not available or failed
+    cachedAudioInfo = defaultInfo;
+    lastAudioInfoFetch = now;
+    return defaultInfo;
+  }
+}
+
+ipcMain.handle('system:audio-info', async () => {
+  return await getAudioSourceInfo();
 });
 
 // ============================================

@@ -9,6 +9,8 @@
   let currentDevice: string = 'No device';
   let fps = 0;
   let memoryUsage = 0;
+  let cpuPercent = 0;
+  let gpuPercent = 0;
 
   // Subscribe to stores
   audioEngine.state.subscribe((state) => {
@@ -19,6 +21,8 @@
   performanceMonitor.stats.subscribe((stats) => {
     fps = stats.fps;
     memoryUsage = stats.memoryUsage;
+    cpuPercent = stats.cpuPercent;
+    gpuPercent = stats.gpuPercent;
   });
 
   async function toggleCapture() {
@@ -57,6 +61,14 @@
   </div>
 
   <div class="header-right">
+    <div class="stat">
+      <span class="stat-label">CPU</span>
+      <span class="stat-value mono" class:warning={cpuPercent > 80} class:good={cpuPercent < 50}>{cpuPercent}%</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">GPU</span>
+      <span class="stat-value mono" class:warning={gpuPercent > 80} class:good={gpuPercent < 50}>{gpuPercent}%</span>
+    </div>
     <div class="stat">
       <span class="stat-label">FPS</span>
       <span class="stat-value mono" class:warning={fps < 50} class:good={fps >= 55}>{fps}</span>

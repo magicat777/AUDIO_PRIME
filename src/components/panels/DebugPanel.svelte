@@ -3,10 +3,49 @@
   import { get } from 'svelte/store';
   import { audioEngine } from '../../core/AudioEngine';
   import type { BeatInfo } from '../../analysis/BeatDetector';
+  import type { VoiceInfo } from '../../analysis/VoiceDetector';
+  import type { StereoAnalysisData } from '../../core/AudioEngine';
 
   let spectrum: Float32Array = new Float32Array(2048);
   let levels = { left: -100, right: -100, peak: -100 };
   let loudness = { momentary: -Infinity, shortTerm: -Infinity, integrated: -Infinity, range: 0, truePeak: -Infinity };
+
+  // Stereo analysis data
+  let stereoData: StereoAnalysisData = {
+    correlation: 0,
+    stereoWidth: 0,
+    midLevel: -Infinity,
+    sideLevel: -Infinity,
+  };
+
+  // Voice detection data
+  let voiceData: VoiceInfo = {
+    detected: false,
+    confidence: 0,
+    probability: 0,
+    pitch: 0,
+    formants: [],
+    classification: 'instrumental',
+    voiceRatio: 0,
+    centroid: 0,
+    vibratoRate: 0,
+    vibratoDepth: 0,
+    pitchStability: 0,
+    hasVibrato: false,
+  };
+
+  // Audio source metadata
+  let audioSourceInfo = {
+    sampleRate: 0,
+    bitDepth: 0,
+    channels: 0,
+    format: 'Unknown',
+    applicationName: 'None',
+    latencyMs: 0,
+    available: false,
+  };
+
+  let audioInfoInterval: ReturnType<typeof setInterval> | null = null;
 
   // Beat detection metrics
   let beatInfo: BeatInfo = {
@@ -193,17 +232,45 @@
     loudness = data;
   });
 
+  const unsubStereo = audioEngine.stereoAnalysis.subscribe((data) => {
+    stereoData = data;
+  });
+
+  const unsubVoice = audioEngine.voiceInfo.subscribe((data) => {
+    voiceData = data;
+  });
+
+  // Fetch audio source info from Electron
+  async function fetchAudioSourceInfo() {
+    if (window.electronAPI?.system?.getAudioInfo) {
+      try {
+        audioSourceInfo = await window.electronAPI.system.getAudioInfo();
+      } catch {
+        // Electron API not available
+      }
+    }
+  }
+
   onMount(() => {
     // Start beat debug update loop
     beatAnimationId = requestAnimationFrame(updateBeatDebugInfo);
+
+    // Fetch audio source info immediately and then every second
+    fetchAudioSourceInfo();
+    audioInfoInterval = setInterval(fetchAudioSourceInfo, 1000);
   });
 
   onDestroy(() => {
     unsubSpectrum();
     unsubLevels();
     unsubLoudness();
+    unsubStereo();
+    unsubVoice();
     if (beatAnimationId !== null) {
       cancelAnimationFrame(beatAnimationId);
+    }
+    if (audioInfoInterval !== null) {
+      clearInterval(audioInfoInterval);
     }
   });
 </script>
@@ -320,6 +387,106 @@
       </div>
     {/each}
   </div>
+
+  <div class="debug-section">
+    <div class="section-title">Stereo Analysis</div>
+    <div class="stat-row">
+      <span class="label">Correlation:</span>
+      <span class="value" class:mono={stereoData.correlation > 0.9} class:wide={stereoData.correlation < 0.3}>
+        {stereoData.correlation.toFixed(3)}
+      </span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Width:</span>
+      <span class="value">{(stereoData.stereoWidth * 100).toFixed(0)}%</span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Mid Level:</span>
+      <span class="value">{isFinite(stereoData.midLevel) ? stereoData.midLevel.toFixed(1) : '-∞'} dB</span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Side Level:</span>
+      <span class="value">{isFinite(stereoData.sideLevel) ? stereoData.sideLevel.toFixed(1) : '-∞'} dB</span>
+    </div>
+  </div>
+
+  <div class="debug-section">
+    <div class="section-title">Voice Detection</div>
+    <div class="stat-row">
+      <span class="label">Detected:</span>
+      <span class="value" class:voice-detected={voiceData.detected}>
+        {voiceData.detected ? 'YES' : 'NO'}
+      </span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Classification:</span>
+      <span class="value classification">{voiceData.classification.toUpperCase()}</span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Confidence:</span>
+      <span class="value">{voiceData.confidence.toFixed(0)}%</span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Pitch:</span>
+      <span class="value">{voiceData.pitch > 0 ? voiceData.pitch.toFixed(1) + ' Hz' : '---'}</span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Voice Ratio:</span>
+      <span class="value">{(voiceData.voiceRatio * 100).toFixed(0)}%</span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Centroid:</span>
+      <span class="value">{voiceData.centroid.toFixed(0)} Hz</span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Formants:</span>
+      <span class="value formants">
+        {voiceData.formants.length > 0 ? voiceData.formants.slice(0, 4).map(f => f.toFixed(0)).join(', ') : '---'}
+      </span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Vibrato:</span>
+      <span class="value" class:has-vibrato={voiceData.hasVibrato}>
+        {voiceData.hasVibrato ? `${voiceData.vibratoRate.toFixed(1)} Hz` : 'NONE'}
+      </span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Vibrato Depth:</span>
+      <span class="value">{voiceData.vibratoDepth.toFixed(0)} cents</span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Pitch Stability:</span>
+      <span class="value">{(voiceData.pitchStability * 100).toFixed(0)}%</span>
+    </div>
+  </div>
+
+  <div class="debug-section">
+    <div class="section-title">Audio Source</div>
+    <div class="stat-row">
+      <span class="label">Application:</span>
+      <span class="value app-name">{audioSourceInfo.applicationName}</span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Sample Rate:</span>
+      <span class="value">{audioSourceInfo.sampleRate > 0 ? `${audioSourceInfo.sampleRate} Hz` : '---'}</span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Bit Depth:</span>
+      <span class="value">{audioSourceInfo.bitDepth > 0 ? `${audioSourceInfo.bitDepth}-bit` : '---'}</span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Channels:</span>
+      <span class="value">{audioSourceInfo.channels > 0 ? (audioSourceInfo.channels === 2 ? 'Stereo' : audioSourceInfo.channels === 1 ? 'Mono' : `${audioSourceInfo.channels}ch`) : '---'}</span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Format:</span>
+      <span class="value">{audioSourceInfo.format}</span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Stream Latency:</span>
+      <span class="value">{audioSourceInfo.latencyMs > 0 ? `${audioSourceInfo.latencyMs.toFixed(1)} ms` : '---'}</span>
+    </div>
+  </div>
 </div>
 
 <style>
@@ -383,6 +550,36 @@
 
   .value.kick {
     color: #fa0;
+  }
+
+  .value.mono {
+    color: #888;
+  }
+
+  .value.wide {
+    color: #0ff;
+  }
+
+  .value.voice-detected {
+    color: #0f0;
+    font-weight: bold;
+  }
+
+  .value.classification {
+    color: #f0f;
+  }
+
+  .value.formants {
+    font-size: 9px;
+  }
+
+  .value.has-vibrato {
+    color: #fa0;
+  }
+
+  .value.app-name {
+    color: #0ff;
+    text-transform: capitalize;
   }
 
   .bands .band-row {

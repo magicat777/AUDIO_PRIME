@@ -46,6 +46,21 @@ export interface SpotifyAudioFeatures {
   error?: string;
 }
 
+export interface SystemMetrics {
+  cpuPercent: number;
+  gpuPercent: number;
+}
+
+export interface AudioSourceInfo {
+  sampleRate: number;
+  bitDepth: number;
+  channels: number;
+  format: string;
+  applicationName: string;
+  latencyMs: number;
+  available: boolean;
+}
+
 export interface ElectronAPI {
   audio: {
     getDevices: () => Promise<AudioDevice[]>;
@@ -55,6 +70,10 @@ export interface ElectronAPI {
   };
   window: {
     toggleFullscreen: () => Promise<boolean>;
+  };
+  system: {
+    getMetrics: () => Promise<SystemMetrics>;
+    getAudioInfo: () => Promise<AudioSourceInfo>;
   };
   spotify: {
     connect: () => Promise<{ success: boolean; error?: string }>;

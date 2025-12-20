@@ -13,6 +13,8 @@ export interface PerformanceStats {
   maxFrameTime: number;
   audioLatency: number;
   memoryUsage: number;
+  cpuPercent: number;
+  gpuPercent: number;
 }
 
 class PerformanceMonitorClass {
@@ -34,6 +36,8 @@ class PerformanceMonitorClass {
       maxFrameTime: 0,
       audioLatency: 0,
       memoryUsage: 0,
+      cpuPercent: 0,
+      gpuPercent: 0,
     });
   }
 
@@ -57,7 +61,7 @@ class PerformanceMonitorClass {
     }
   }
 
-  private tick = (): void => {
+  private tick = async (): Promise<void> => {
     if (!this.running) return;
 
     const now = performance.now();
@@ -89,6 +93,19 @@ class PerformanceMonitorClass {
         memoryUsage = (performance as any).memory.usedJSHeapSize / (1024 * 1024);
       }
 
+      // Get CPU/GPU metrics from Electron
+      let cpuPercent = 0;
+      let gpuPercent = 0;
+      if (window.electronAPI?.system?.getMetrics) {
+        try {
+          const metrics = await window.electronAPI.system.getMetrics();
+          cpuPercent = metrics.cpuPercent;
+          gpuPercent = metrics.gpuPercent;
+        } catch {
+          // Electron API not available
+        }
+      }
+
       this.stats.set({
         fps,
         frameTime,
@@ -97,6 +114,8 @@ class PerformanceMonitorClass {
         maxFrameTime,
         audioLatency: 0, // TODO: Calculate actual audio latency
         memoryUsage,
+        cpuPercent,
+        gpuPercent,
       });
     }
 
