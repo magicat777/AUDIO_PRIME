@@ -38,6 +38,7 @@
   "dependencies": {
     "comlink": "^4.4.1",
     "dotenv": "^17.2.3",
+    "electron-updater": "^6.6.2",
     "fft.js": "^4.0.4",
     "interactjs": "^1.10.27"
   },
@@ -71,27 +72,85 @@
   "build": {
     "appId": "com.audioprime.app",
     "productName": "AUDIO_PRIME",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "files": [
       "dist/**/*",
       "dist-electron/**/*"
     ],
+    "publish": {
+      "provider": "github",
+      "owner": "magicat777",
+      "repo": "live-audio-analyzer"
+    },
     "linux": {
       "target": [
         "AppImage",
-        "deb"
+        "deb",
+        "rpm"
       ],
       "icon": "assets/icon.png",
-      "category": "AudioVideo",
-      "maintainer": "Jason Holt <jason-holt@users.noreply.github.com>"
+      "category": "AudioVideo;Audio;Music",
+      "maintainer": "Jason Holt <jason-holt@users.noreply.github.com>",
+      "vendor": "Audio Prime",
+      "synopsis": "Professional Audio Analysis & Visualization",
+      "description": "Real-time audio spectrum analyzer with ITU-R BS.1770 LUFS metering, beat detection, voice classification, and Spotify integration.",
+      "desktop": {
+        "StartupWMClass": "audio-prime"
+      }
+    },
+    "deb": {
+      "depends": [
+        "libpulse0",
+        "libasound2"
+      ]
+    },
+    "rpm": {
+      "depends": [
+        "pulseaudio-libs",
+        "alsa-lib"
+      ]
     },
     "mac": {
-      "target": "dmg"
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "category": "public.app-category.music",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "icon": "assets/icon.png"
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
     },
     "win": {
-      "target": "nsis"
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
     }
   }
 }

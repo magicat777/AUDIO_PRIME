@@ -15,6 +15,7 @@ import { URL } from 'url';
 import * as os from 'os';
 import * as fs from 'fs';
 import { config as dotenvConfig } from 'dotenv';
+import { autoUpdater } from 'electron-updater';
 
 // Load environment variables from .env file (for development)
 dotenvConfig({ path: join(__dirname, '../.env') });
@@ -1186,12 +1187,104 @@ ipcMain.handle(IPC.SPOTIFY_REPEAT, async (_, state: 'off' | 'track' | 'context')
   return await playbackRepeat(state);
 });
 
+// ============================================
+// Auto-Update Configuration
+// ============================================
+
+/**
+ * Configure and initialize auto-updater
+ * Updates are checked on app start and can be triggered manually
+ */
+function initAutoUpdater(): void {
+  // Don't check for updates in development
+  if (process.env.VITE_DEV_SERVER_URL) {
+    console.log('Auto-updater disabled in development mode');
+    return;
+  }
+
+  // Configure auto-updater
+  autoUpdater.autoDownload = false;  // Don't auto-download, let user decide
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  // Log update events
+  autoUpdater.on('checking-for-update', () => {
+    console.log('Checking for updates...');
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    console.log('Update available:', info.version);
+    // Notify renderer about available update
+    mainWindow?.webContents.send('update:available', {
+      version: info.version,
+      releaseDate: info.releaseDate,
+    });
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    console.log('No updates available');
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    console.log(`Download progress: ${progress.percent.toFixed(1)}%`);
+    mainWindow?.webContents.send('update:progress', {
+      percent: progress.percent,
+      bytesPerSecond: progress.bytesPerSecond,
+      transferred: progress.transferred,
+      total: progress.total,
+    });
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log('Update downloaded:', info.version);
+    mainWindow?.webContents.send('update:downloaded', {
+      version: info.version,
+    });
+  });
+
+  autoUpdater.on('error', (error) => {
+    console.error('Auto-updater error:', error.message);
+  });
+
+  // Check for updates after a short delay
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch((err) => {
+      console.error('Failed to check for updates:', err.message);
+    });
+  }, 5000);
+}
+
+// IPC handlers for manual update control
+ipcMain.handle('update:check', async () => {
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    return { success: true, version: result?.updateInfo?.version };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('update:download', async () => {
+  try {
+    await autoUpdater.downloadUpdate();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('update:install', () => {
+  autoUpdater.quitAndInstall(false, true);
+});
+
 // App lifecycle
 app.whenReady().then(() => {
   // Load stored Spotify tokens
   loadStoredTokens();
 
   createWindow();
+
+  // Initialize auto-updater
+  initAutoUpdater();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
