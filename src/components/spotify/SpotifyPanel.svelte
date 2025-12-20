@@ -281,14 +281,19 @@
   /* Now Playing Section */
   .now-playing-section {
     display: flex;
-    gap: 0.75rem;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
     flex: 1;
     min-width: 0;
+    padding: 0.25rem;
   }
 
   .album-art {
-    width: 64px;
-    height: 64px;
+    width: 100%;
+    max-width: min(240px, 80%);
+    aspect-ratio: 1;
     flex-shrink: 0;
     border-radius: 4px;
     overflow: hidden;
@@ -314,40 +319,44 @@
   .track-info {
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    align-items: center;
+    text-align: center;
     gap: 0.15rem;
-    min-width: 0;
-    flex: 1;
+    width: 100%;
   }
 
   .track-name {
     font-size: 0.85rem;
     font-weight: 600;
     color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    line-height: 1.2;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
   }
 
   .track-artist {
     font-size: 0.7rem;
     color: var(--text-secondary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    line-height: 1.2;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
   }
 
   .track-album {
     font-size: 0.6rem;
     color: var(--text-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    line-height: 1.2;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
   }
 
   .track-progress {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 0.4rem;
     margin-top: 0.2rem;
   }

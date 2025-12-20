@@ -30,6 +30,7 @@ let spotifyTokens: {
   refreshToken: string;
   expiresAt: number;
 } | null = null;
+let lastTrackId: string | null = null;
 
 // Spotify configuration
 const SPOTIFY_CONFIG = {
@@ -526,7 +527,11 @@ async function fetchNowPlaying(): Promise<unknown> {
       albumArt = sorted.find((img: { height: number }) => img.height && img.height <= 300)?.url || sorted[sorted.length - 1]?.url || albumArtLarge;
     }
 
-    console.log('Now playing:', data.item.name, 'Album art:', albumArt);
+    // Only log on track change
+    if (data.item.id !== lastTrackId) {
+      console.log('Now playing:', data.item.name, 'by', data.item.artists.map((a: { name: string }) => a.name).join(', '));
+      lastTrackId = data.item.id;
+    }
 
     return {
       playing: data.is_playing,
