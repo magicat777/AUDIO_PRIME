@@ -10,7 +10,6 @@
  */
 
 // Import fft.js - uses pre-computed twiddle factors for ~2x speedup
-// @ts-ignore - fft.js doesn't have types
 import FFT from 'fft.js';
 
 const SAMPLE_RATE = 48000;

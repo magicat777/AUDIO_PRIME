@@ -4,7 +4,7 @@ if (process.env.APPIMAGE || process.platform === 'linux') {
   process.argv.push('--no-sandbox');
 }
 
-import { app, BrowserWindow, ipcMain, shell, safeStorage } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, safeStorage, session } from 'electron';
 import { join } from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { exec } from 'child_process';
@@ -209,6 +209,32 @@ function stopAudioCapture(): void {
 }
 
 function createWindow(): void {
+  // Configure Content Security Policy for production
+  // CSP helps prevent XSS attacks by restricting resource loading
+  if (!process.env.VITE_DEV_SERVER_URL) {
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [
+            [
+              "default-src 'self'",
+              "script-src 'self'",
+              "style-src 'self' 'unsafe-inline'",  // Svelte uses inline styles
+              "img-src 'self' https://i.scdn.co data:",  // Spotify album art + data URIs
+              "connect-src 'self' https://api.spotify.com https://accounts.spotify.com",
+              "font-src 'self'",
+              "object-src 'none'",
+              "base-uri 'self'",
+              "form-action 'self'",
+              "frame-ancestors 'none'",
+            ].join('; ')
+          ]
+        }
+      });
+    });
+  }
+
   mainWindow = new BrowserWindow({
     width: 1920,
     height: 1080,
@@ -218,8 +244,13 @@ function createWindow(): void {
     show: false,
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
-      nodeIntegration: false,
-      contextIsolation: true,
+      // Security settings - see Electron security checklist
+      nodeIntegration: false,        // Prevent Node.js access from renderer
+      contextIsolation: true,        // Isolate preload from renderer context
+      webSecurity: true,             // Enforce same-origin policy
+      allowRunningInsecureContent: false,  // Block HTTP content on HTTPS
+      // Note: sandbox disabled for AppImage compatibility on Linux
+      // AppImages mount in /tmp and can't use the SUID sandbox
       sandbox: false,
     },
   });
@@ -241,10 +272,20 @@ function createWindow(): void {
     stopAudioCapture();
   });
 
-  // Open external links in default browser
+  // Security: Open external links in default browser, not in app
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  // Security: Prevent navigation to external URLs
+  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+    const parsedUrl = new URL(navigationUrl);
+    // Allow localhost for development and file:// for production
+    if (parsedUrl.protocol !== 'file:' && !parsedUrl.hostname.match(/^(localhost|127\.0\.0\.1)$/)) {
+      event.preventDefault();
+      shell.openExternal(navigationUrl);
+    }
   });
 }
 

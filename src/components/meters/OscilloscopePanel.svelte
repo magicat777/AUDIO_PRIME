@@ -13,8 +13,8 @@
   let canvasHeight = 180;
 
   // Trigger settings
-  let triggerLevel = 0;
-  let timeScale = 1; // 1 = normal, 0.5 = zoom in, 2 = zoom out
+  const triggerLevel = 0;
+  const timeScale = 1; // 1 = normal, 0.5 = zoom in, 2 = zoom out
 
   // Auto-scaling for visibility
   let autoGain = 1;

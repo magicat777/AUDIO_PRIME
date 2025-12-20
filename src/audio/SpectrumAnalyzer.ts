@@ -365,7 +365,7 @@ export class SpectrumAnalyzer {
       // === STEP 5: Normalize to 0-1 range ===
       const DB_MIN = -70;
       const DB_MAX = -10;
-      let normalized = (db - DB_MIN) / (DB_MAX - DB_MIN);
+      const normalized = (db - DB_MIN) / (DB_MAX - DB_MIN);
       rawOutput[i] = Math.max(0, Math.min(1, normalized));
     }
 

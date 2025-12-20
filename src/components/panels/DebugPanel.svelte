@@ -59,9 +59,9 @@
   };
 
   // Additional beat debug info from detector
-  let kickEnergy = 0;
-  let onsetStrength = 0;
-  let tempoHistoryLen = 0;
+  const kickEnergy = 0;
+  const onsetStrength = 0;
+  const tempoHistoryLen = 0;
 
   // Animation frame for beat info updates (Svelte 5 reactivity fix)
   let beatAnimationId: number | null = null;
@@ -142,8 +142,8 @@
   ];
 
   // Initialize peak hold state
-  let peakHolds: number[] = BAND_RANGES.map(() => 0);
-  let peakHoldTimes: number[] = BAND_RANGES.map(() => 0);
+  const peakHolds: number[] = BAND_RANGES.map(() => 0);
+  const peakHoldTimes: number[] = BAND_RANGES.map(() => 0);
 
   // Convert frequency to bar index (logarithmic mapping)
   function freqToBar(freq: number): number {

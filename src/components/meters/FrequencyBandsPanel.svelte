@@ -37,8 +37,8 @@
   ];
 
   // Peak hold state
-  let peakHolds: number[] = BAND_RANGES.map(() => 0);
-  let peakHoldTimes: number[] = BAND_RANGES.map(() => 0);
+  const peakHolds: number[] = BAND_RANGES.map(() => 0);
+  const peakHoldTimes: number[] = BAND_RANGES.map(() => 0);
 
   // Convert frequency to bar index (logarithmic mapping)
   function freqToBar(freq: number): number {
