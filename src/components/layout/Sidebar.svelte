@@ -3,6 +3,7 @@
   import { audioEngine } from '../../core/AudioEngine';
   import type { AudioDevice } from '../../core/AudioEngine';
   import { moduleVisibility } from '../../stores/moduleVisibility';
+  import { gridLayout } from '../../stores/gridLayout';
 
   export let open = false;
 
@@ -10,6 +11,10 @@
 
   let devices: AudioDevice[] = [];
   let selectedDeviceId: string | null = null;
+
+  // Check if all panels are locked
+  $: allLocked = Object.values($gridLayout.panels).every(p => p.locked);
+  $: someLocked = Object.values($gridLayout.panels).some(p => p.locked);
 
   // Get devices on mount
   $: if (open && devices.length === 0) {
@@ -142,12 +147,47 @@
     </section>
 
     <section class="section">
+      <h3>Layout</h3>
+      <div class="layout-controls">
+        <button
+          class="layout-btn"
+          class:active={allLocked}
+          on:click={() => allLocked ? gridLayout.unlockAll() : gridLayout.lockAll()}
+        >
+          <span class="lock-icon">{allLocked ? '🔓' : '🔒'}</span>
+          <span>{allLocked ? 'Unlock All Panels' : 'Lock All Panels'}</span>
+        </button>
+        <button class="layout-btn" on:click={() => gridLayout.toggleGrid()}>
+          <span class="grid-icon">⊞</span>
+          <span>Toggle Grid</span>
+          {#if $gridLayout.gridVisible}
+            <span class="badge active">ON</span>
+          {/if}
+        </button>
+        <button class="layout-btn" on:click={() => gridLayout.toggleSnap()}>
+          <span class="snap-icon">⊡</span>
+          <span>Snap to Grid</span>
+          {#if $gridLayout.snapEnabled}
+            <span class="badge active">ON</span>
+          {/if}
+        </button>
+        <button class="layout-btn danger" on:click={() => gridLayout.reset()}>
+          <span class="reset-icon">↺</span>
+          <span>Reset Layout</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="section">
       <h3>Keyboard Shortcuts</h3>
       <div class="shortcuts">
         <div class="shortcut"><kbd>Space</kbd> Start/Stop</div>
         <div class="shortcut"><kbd>M</kbd> Toggle Menu</div>
         <div class="shortcut"><kbd>F</kbd> Fullscreen</div>
         <div class="shortcut"><kbd>Esc</kbd> Close Menu</div>
+        <div class="shortcut"><kbd>Shift</kbd>+<kbd>G</kbd> Toggle Grid</div>
+        <div class="shortcut"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> Toggle Snap</div>
+        <div class="shortcut"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> Reset Layout</div>
       </div>
     </section>
   </div>
@@ -353,5 +393,52 @@
     font-family: var(--font-mono);
     font-size: 0.75rem;
     color: var(--text-primary);
+  }
+
+  /* Layout controls */
+  .layout-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .layout-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .layout-btn:hover {
+    background: rgba(74, 158, 255, 0.1);
+    border-color: var(--accent-color);
+    color: var(--text-primary);
+  }
+
+  .layout-btn.active {
+    background: rgba(74, 220, 150, 0.1);
+    border-color: var(--meter-green);
+  }
+
+  .layout-btn.danger:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: var(--meter-red);
+    color: var(--meter-red);
+  }
+
+  .layout-btn .badge.active {
+    background: rgba(74, 220, 150, 0.2);
+    color: var(--meter-green);
+  }
+
+  .lock-icon, .grid-icon, .snap-icon, .reset-icon {
+    font-size: 0.9rem;
   }
 </style>

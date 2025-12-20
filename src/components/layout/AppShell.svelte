@@ -24,6 +24,21 @@
   let isCapturing = false;
   let lufsAnimationId: number | null = null;
 
+  // Track previous visibility state to detect newly enabled panels
+  let prevVisibility: Record<string, boolean> = {};
+
+  // Watch for visibility changes and bring newly enabled panels to front
+  $: {
+    const currentVisibility = $moduleVisibility;
+    for (const [key, isVisible] of Object.entries(currentVisibility)) {
+      if (isVisible && !prevVisibility[key]) {
+        // Panel was just enabled, bring it to front
+        gridLayout.bringToFront(key);
+      }
+    }
+    prevVisibility = { ...currentVisibility };
+  }
+
   // LUFS data
   let momentary = -Infinity;
   let shortTerm = -Infinity;

@@ -165,9 +165,17 @@
   function handleDoubleClick() {
     gridLayout.toggleLock(panelId);
   }
+
+  function handlePanelClick() {
+    // Bring panel to front when clicked anywhere
+    gridLayout.bringToFront(panelId);
+  }
 </script>
 
 {#if panel}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
     bind:this={panelElement}
     class="draggable-panel"
@@ -178,6 +186,7 @@
     style={panelStyle}
     role="region"
     aria-label={title || panelId}
+    on:mousedown={handlePanelClick}
   >
     <!-- Drag handle (title bar) -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->

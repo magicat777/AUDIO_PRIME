@@ -28,24 +28,26 @@ export interface PanelLayout {
 }
 
 // Default layouts for each panel (position in grid cells)
-// Grid is roughly 96 columns x 54 rows at 1920x1080 with 20px cells
+// Grid is roughly 85 columns x 64 rows at 1700x1280 with 20px cells
 const defaultLayouts: Record<string, Omit<PanelLayout, 'id'>> = {
   // Top row - main visualizers
-  spectrum: { x: 0, y: 0, width: 45, height: 18, zIndex: 1, locked: false },
-  bassDetail: { x: 46, y: 0, width: 22, height: 18, zIndex: 1, locked: false },
-  debug: { x: 69, y: 0, width: 11, height: 18, zIndex: 1, locked: false },
+  spectrum: { x: 0, y: 0, width: 46, height: 28, zIndex: 1, locked: false },
+  bassDetail: { x: 46, y: 0, width: 25, height: 28, zIndex: 1, locked: false },
+  debug: { x: 71, y: 0, width: 14, height: 41, zIndex: 1, locked: false },
 
-  // Middle row - meters
-  vuMeters: { x: 0, y: 19, width: 20, height: 8, zIndex: 1, locked: false },
-  lufsMetering: { x: 21, y: 19, width: 20, height: 8, zIndex: 1, locked: false },
-  bpmTempo: { x: 42, y: 19, width: 14, height: 8, zIndex: 1, locked: false },
-  voiceDetection: { x: 57, y: 19, width: 14, height: 8, zIndex: 1, locked: false },
-  spotify: { x: 72, y: 19, width: 12, height: 8, zIndex: 1, locked: false },
+  // Second row - meters
+  vuMeters: { x: 0, y: 28, width: 24, height: 13, zIndex: 1, locked: false },
+  lufsMetering: { x: 24, y: 28, width: 22, height: 13, zIndex: 1, locked: false },
+  goniometer: { x: 46, y: 28, width: 12, height: 13, zIndex: 1, locked: false },
+  stereoCorrelation: { x: 58, y: 28, width: 13, height: 13, zIndex: 1, locked: false },
 
-  // Bottom row - stereo analysis
-  stereoCorrelation: { x: 0, y: 28, width: 25, height: 10, zIndex: 1, locked: false },
-  goniometer: { x: 26, y: 28, width: 10, height: 10, zIndex: 1, locked: false },
-  oscilloscope: { x: 37, y: 28, width: 22, height: 10, zIndex: 1, locked: false },
+  // Third row
+  bpmTempo: { x: 0, y: 41, width: 13, height: 14, zIndex: 1, locked: false },
+  oscilloscope: { x: 13, y: 41, width: 33, height: 14, zIndex: 1, locked: false },
+  spotify: { x: 46, y: 41, width: 25, height: 23, zIndex: 1, locked: false },
+
+  // Bottom row
+  voiceDetection: { x: 0, y: 55, width: 46, height: 9, zIndex: 1, locked: false },
 };
 
 export type PanelId = keyof typeof defaultLayouts;
@@ -211,6 +213,38 @@ function createGridLayoutStore() {
         saveToStorage(newState);
         return newState;
       });
+    },
+
+    // Lock all panels
+    lockAll: () => {
+      update(state => {
+        const newPanels = { ...state.panels };
+        for (const id of Object.keys(newPanels)) {
+          newPanels[id] = { ...newPanels[id], locked: true };
+        }
+        const newState = { ...state, panels: newPanels };
+        saveToStorage(newState);
+        return newState;
+      });
+    },
+
+    // Unlock all panels
+    unlockAll: () => {
+      update(state => {
+        const newPanels = { ...state.panels };
+        for (const id of Object.keys(newPanels)) {
+          newPanels[id] = { ...newPanels[id], locked: false };
+        }
+        const newState = { ...state, panels: newPanels };
+        saveToStorage(newState);
+        return newState;
+      });
+    },
+
+    // Check if all panels are locked
+    areAllLocked: (): boolean => {
+      const state = get({ subscribe });
+      return Object.values(state.panels).every(p => p.locked);
     },
 
     // Toggle grid visibility
