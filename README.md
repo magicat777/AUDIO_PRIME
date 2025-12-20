@@ -95,17 +95,26 @@ npm run build
 
 ## Spotify Setup
 
-1. Create a Spotify Developer application at [developer.spotify.com](https://developer.spotify.com/dashboard)
-2. Add `http://127.0.0.1:8888/callback` as a Redirect URI
-3. Create a `.env` file in the project root:
+**Note:** Spotify integration is optional. The app works fully without it - this feature only adds "Now Playing" information and playback controls.
+
+### For End Users (Downloaded Builds)
+The Spotify integration requires API credentials. If you want to enable this feature:
+
+1. Create a free Spotify Developer account at [developer.spotify.com](https://developer.spotify.com/dashboard)
+2. Create a new app and get your Client ID and Client Secret
+3. Add `http://127.0.0.1:8888/callback` as a Redirect URI in your app settings
+4. Create a `.env` file in the app's resources directory with:
    ```
    SPOTIFY_CLIENT_ID=your_client_id_here
    SPOTIFY_CLIENT_SECRET=your_client_secret_here
    ```
-4. Restart the application
-5. Click "Connect to Spotify" in the Spotify panel
+5. Restart the application
+6. Click "Connect to Spotify" in the Spotify panel
 
-**Note:** Spotify Premium is required for playback controls.
+### For Developers (Building from Source)
+Create a `.env` file in the project root with your Spotify API credentials.
+
+**Note:** Spotify Premium is required for playback controls. Free accounts can view "Now Playing" information only.
 
 ---
 

@@ -1458,9 +1458,10 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   stopAudioCapture();
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  // Quit the app on all platforms when window is closed
+  // AUDIO_PRIME is a single-window app, so keeping it running in the dock
+  // without a window doesn't make sense
+  app.quit();
 });
 
 app.on('before-quit', () => {

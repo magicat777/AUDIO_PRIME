@@ -19,6 +19,7 @@ export function getKeyName(key: number, mode: number): string {
 export interface SpotifyAuthStatus {
   connected: boolean;
   connecting: boolean;
+  error?: string;
 }
 
 export interface SpotifyTrack {
@@ -130,16 +131,24 @@ class SpotifyServiceClass {
    * Connect to Spotify (initiate OAuth flow)
    */
   async connect(): Promise<void> {
-    this.authStatus.update(s => ({ ...s, connecting: true }));
+    this.authStatus.update(s => ({ ...s, connecting: true, error: undefined }));
     try {
       const result = await window.electronAPI.spotify.connect();
       if (!result.success) {
-        this.authStatus.update(s => ({ ...s, connecting: false }));
+        this.authStatus.update(s => ({
+          ...s,
+          connecting: false,
+          error: result.error || 'Failed to connect to Spotify'
+        }));
         console.error('Spotify connect failed:', result.error);
       }
       // Auth status will be updated via the auth listener when OAuth completes
     } catch (error) {
-      this.authStatus.update(s => ({ ...s, connecting: false }));
+      this.authStatus.update(s => ({
+        ...s,
+        connecting: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred'
+      }));
       console.error('Error connecting to Spotify:', error);
     }
   }

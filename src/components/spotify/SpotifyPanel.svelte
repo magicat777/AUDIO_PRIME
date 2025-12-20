@@ -187,6 +187,19 @@
         </svg>
       </div>
       <span class="disconnected-text">Connect to Spotify to see what's playing</span>
+      {#if authStatus.error}
+        <div class="error-message">
+          <svg class="error-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+          </svg>
+          <span class="error-text">Spotify integration not configured</span>
+          {#if authStatus.error.includes('credentials not configured')}
+            <span class="error-hint">This feature requires Spotify API credentials. See documentation for setup instructions.</span>
+          {:else}
+            <span class="error-hint">{authStatus.error}</span>
+          {/if}
+        </div>
+      {/if}
       {#if !authStatus.connecting}
         <button class="connect-btn-large" on:click={handleConnect}>
           Connect to Spotify
@@ -557,5 +570,39 @@
     width: 12px;
     height: 12px;
     color: #1DB954;
+  }
+
+  /* Error message styling */
+  .error-message {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.6rem 0.8rem;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 4px;
+    max-width: 90%;
+  }
+
+  .error-icon {
+    width: 20px;
+    height: 20px;
+    color: #ef4444;
+  }
+
+  .error-text {
+    font-size: 0.65rem;
+    color: #ef4444;
+    text-align: center;
+    line-height: 1.4;
+  }
+
+  .error-hint {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    text-align: center;
+    font-family: var(--font-mono);
+    line-height: 1.3;
   }
 </style>
