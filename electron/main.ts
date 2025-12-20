@@ -4,6 +4,9 @@ if (process.env.APPIMAGE || process.platform === 'linux') {
   process.argv.push('--no-sandbox');
 }
 
+// Suppress noisy Chromium DevTools errors (Autofill, etc.)
+process.argv.push('--disable-features=AutofillServerCommunication');
+
 import { app, BrowserWindow, ipcMain, shell, safeStorage, session } from 'electron';
 import { join } from 'path';
 import { spawn, ChildProcess } from 'child_process';
@@ -282,10 +285,10 @@ function createWindow(): void {
   }
 
   mainWindow = new BrowserWindow({
-    width: 1920,
-    height: 1080,
-    minWidth: 1280,
-    minHeight: 720,
+    width: 1157,
+    height: 1333,
+    minWidth: 1000,
+    minHeight: 800,
     backgroundColor: '#0a0a0f',
     show: false,
     webPreferences: {
@@ -1255,26 +1258,32 @@ function initAutoUpdater(): void {
   });
 
   autoUpdater.on('error', (error) => {
-    // Suppress "no published versions" error - expected for new releases
-    if (error.message?.includes('No published versions') ||
-        error.message?.includes('net::ERR_') ||
-        error.message?.includes('ENOTFOUND')) {
-      console.log('Auto-updater: No releases available yet');
+    // Suppress expected/non-critical errors
+    const msg = error.message || '';
+    if (msg.includes('No published versions') ||
+        msg.includes('net::ERR_') ||
+        msg.includes('ENOTFOUND') ||
+        msg.includes('HttpError: 404') ||
+        msg.includes('latest-linux.yml')) {
+      console.log('Auto-updater: Update check unavailable');
     } else {
-      console.error('Auto-updater error:', error.message);
+      console.error('Auto-updater error:', msg);
     }
   });
 
   // Check for updates after a short delay
   setTimeout(() => {
     autoUpdater.checkForUpdates().catch((err) => {
-      // Suppress expected errors
-      if (err.message?.includes('No published versions') ||
-          err.message?.includes('net::ERR_') ||
-          err.message?.includes('ENOTFOUND')) {
-        console.log('Auto-updater: No releases available yet');
+      // Suppress expected/non-critical errors
+      const msg = err.message || '';
+      if (msg.includes('No published versions') ||
+          msg.includes('net::ERR_') ||
+          msg.includes('ENOTFOUND') ||
+          msg.includes('HttpError: 404') ||
+          msg.includes('latest-linux.yml')) {
+        console.log('Auto-updater: Update check unavailable');
       } else {
-        console.error('Failed to check for updates:', err.message);
+        console.error('Failed to check for updates:', msg);
       }
     });
   }, 5000);
