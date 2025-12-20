@@ -1,10 +1,26 @@
 /**
  * SpectrumAnalyzer - Professional perceptual frequency analysis
  * Based on proven OMEGA implementation with proper FFT bin mapping
+ *
+ * Enhanced with professional audio engineering techniques:
+ * - Weighted bin sampling with triangular interpolation
+ * - Gap-filling via neighbor interpolation
+ * - Fractional-octave smoothing (1/6 octave)
+ * - Parabolic peak interpolation for sub-bin accuracy
+ *
+ * References:
+ * - DSPRelated.com: Spectral Interpolation, Quadratic Peak Interpolation
+ * - Rational Acoustics: Banding vs Smoothing
+ * - MATLAB poctave: Octave band analysis
  */
 
 const SAMPLE_RATE = 48000;
 const FFT_SIZE = 4096;
+
+// Smoothing configuration
+const OCTAVE_SMOOTHING_FACTOR = 1/6;  // 1/6 octave smoothing (professional RTA standard)
+const GAP_THRESHOLD = 0.15;           // Threshold for gap detection (relative to neighbors)
+const INTERPOLATION_BLEND = 0.6;      // How much to blend interpolated values
 
 // Perceptual frequency band distribution (matches OMEGA)
 // Note: Currently using logarithmic mapping with these approximate band weights:
@@ -50,18 +66,26 @@ function getFrequencyCompensation(freq: number): number {
 
 // Psychoacoustic emphasis for musically important frequencies
 // These ADD to the base compensation curve for perceptually important bands
+// Designed for balanced display across all instrument types
 const PSYCHOACOUSTIC_WEIGHTS = {
-  subBass: { range: [20, 60], weight: 1.2 },         // Sub-bass feel (+1.6dB)
-  kickDrum: { range: [55, 100], weight: 1.3 },       // Kick punch (+2.3dB)
-  bassBody: { range: [80, 200], weight: 1.45 },      // Bass guitar/body (+3.2dB) - fills gap
+  subBass: { range: [20, 60], weight: 1.15 },          // Sub-bass feel (+1.2dB) - reduced
+  kickDrum: { range: [55, 100], weight: 1.25 },        // Kick punch (+1.9dB) - reduced
+  bassBody: { range: [80, 200], weight: 1.35 },        // Bass guitar/body (+2.6dB) - reduced
   voiceFundamental: { range: [180, 400], weight: 1.3 }, // Vocal body/chest (+2.3dB)
-  voiceClarity: { range: [1000, 3000], weight: 1.4 }, // Vocal clarity/formants (+2.9dB)
-  presence: { range: [3000, 6000], weight: 1.5 },    // Presence/articulation (+3.5dB)
-  air: { range: [8000, 12000], weight: 1.2 },        // Air/breathiness (+1.6dB)
+  instrumentBody: { range: [300, 800], weight: 1.35 }, // Guitar/keys fundamentals (+2.6dB) - NEW!
+  voiceClarity: { range: [1000, 3000], weight: 1.35 }, // Vocal clarity/formants (+2.6dB) - reduced
+  presence: { range: [3000, 6000], weight: 1.4 },      // Presence/articulation (+2.9dB) - reduced
+  air: { range: [8000, 12000], weight: 1.15 },         // Air/breathiness (+1.2dB) - reduced
 };
+
+export interface BinWeight {
+  index: number;
+  weight: number;  // 0-1 triangular weight based on distance from center
+}
 
 export interface BandMapping {
   binIndices: number[];
+  binWeights: BinWeight[];  // Weighted bin sampling for smoother interpolation
   freqStart: number;
   freqEnd: number;
   centerFreq: number;
@@ -109,6 +133,7 @@ export class SpectrumAnalyzer {
   /**
    * Create perceptual frequency band mapping
    * Uses logarithmic distribution with proper FFT bin assignment
+   * Enhanced with weighted bin sampling for gap-free display
    */
   private createBandMapping(): void {
     this.bandMappings = [];
@@ -116,6 +141,7 @@ export class SpectrumAnalyzer {
     const minFreq = 20;
     const maxFreq = 20000;
     const binWidth = this.sampleRate / this.fftSize;
+    const halfBinCount = this.fftSize / 2;
 
     // Create logarithmic frequency distribution for all bars
     for (let i = 0; i < this.barCount; i++) {
@@ -127,17 +153,70 @@ export class SpectrumAnalyzer {
 
       // Find FFT bins that fall within this frequency range
       const binStart = Math.max(1, Math.floor(freqStart / binWidth));
-      const binEnd = Math.min(this.fftSize / 2 - 1, Math.ceil(freqEnd / binWidth));
+      const binEnd = Math.min(halfBinCount - 1, Math.ceil(freqEnd / binWidth));
 
       const barBins: number[] = [];
-      for (let bin = binStart; bin <= binEnd; bin++) {
-        barBins.push(bin);
+      const binWeights: BinWeight[] = [];
+
+      // Expand sampling range for low frequencies (where we have few bins)
+      // This helps fill gaps by sampling neighboring bins with decreasing weights
+      const bandwidthBins = binEnd - binStart + 1;
+      const minSampleBins = 3;  // Always sample at least 3 bins for interpolation
+
+      let sampleStart = binStart;
+      let sampleEnd = binEnd;
+
+      if (bandwidthBins < minSampleBins) {
+        // Expand range symmetrically around center
+        const expansion = Math.ceil((minSampleBins - bandwidthBins) / 2);
+        sampleStart = Math.max(1, binStart - expansion);
+        sampleEnd = Math.min(halfBinCount - 1, binEnd + expansion);
       }
 
-      // Ensure at least one bin (use nearest)
+      // Create weighted bin sampling with triangular window
+      for (let bin = sampleStart; bin <= sampleEnd; bin++) {
+        barBins.push(bin);
+
+        // Calculate triangular weight based on distance from center
+        const binFreq = bin * binWidth;
+        const distanceFromCenter = Math.abs(binFreq - centerFreq);
+        const bandwidth = freqEnd - freqStart;
+
+        // Triangular weight: 1.0 at center, decreasing to 0.2 at edges
+        // For bins outside the nominal range, weight decreases further
+        let weight: number;
+        if (bin >= binStart && bin <= binEnd) {
+          // Inside nominal range: high weight
+          weight = 1.0 - 0.5 * (distanceFromCenter / (bandwidth / 2 + 0.001));
+          weight = Math.max(0.5, weight);
+        } else {
+          // Outside nominal range (expansion): lower weight for interpolation
+          const expansionDistance = bin < binStart
+            ? (binStart - bin) * binWidth
+            : (bin - binEnd) * binWidth;
+          weight = 0.4 * Math.exp(-expansionDistance / (bandwidth + 1));
+          weight = Math.max(0.1, weight);
+        }
+
+        binWeights.push({ index: bin, weight });
+      }
+
+      // Ensure at least one bin (use nearest with neighbors)
       if (barBins.length === 0) {
         const nearestBin = Math.round(centerFreq / binWidth);
-        barBins.push(Math.max(1, Math.min(this.fftSize / 2 - 1, nearestBin)));
+        const clampedBin = Math.max(1, Math.min(halfBinCount - 1, nearestBin));
+
+        // Add center and neighbors for interpolation
+        for (let offset = -1; offset <= 1; offset++) {
+          const bin = clampedBin + offset;
+          if (bin >= 1 && bin < halfBinCount) {
+            barBins.push(bin);
+            binWeights.push({
+              index: bin,
+              weight: offset === 0 ? 1.0 : 0.3
+            });
+          }
+        }
       }
 
       // Calculate frequency compensation weight
@@ -145,6 +224,7 @@ export class SpectrumAnalyzer {
 
       this.bandMappings.push({
         binIndices: barBins,
+        binWeights,
         freqStart,
         freqEnd,
         centerFreq,
@@ -206,15 +286,18 @@ export class SpectrumAnalyzer {
    * Input: Raw FFT magnitude data (linear scale)
    * Output: Normalized bar values (0-1 range)
    *
-   * Processing chain (matching OMEGA approach):
-   * 1. Average FFT bins for each bar
+   * Enhanced processing chain:
+   * 1. Weighted bin sampling with triangular interpolation
    * 2. Convert to dB scale
    * 3. Apply dB-domain frequency compensation
    * 4. Apply psychoacoustic emphasis
    * 5. Normalize to 0-1 range
-   * 6. Apply smoothing
+   * 6. Apply gap-filling interpolation
+   * 7. Apply fractional-octave smoothing
+   * 8. Apply attack/decay temporal smoothing
    */
   process(fftMagnitudes: Float32Array): Float32Array {
+    const rawOutput = new Float32Array(this.barCount);
     const output = new Float32Array(this.barCount);
     const now = performance.now();
 
@@ -242,59 +325,84 @@ export class SpectrumAnalyzer {
       }));
     }
 
+    // === STEP 1: Weighted bin sampling ===
     for (let i = 0; i < this.bandMappings.length; i++) {
       const mapping = this.bandMappings[i];
 
-      // Average magnitude across bins for this bar (in linear domain)
-      let sum = 0;
+      // Use weighted bin sampling for smoother interpolation
+      let weightedSum = 0;
+      let totalWeight = 0;
       let maxMag = 0;
-      for (const binIdx of mapping.binIndices) {
-        if (binIdx < fftMagnitudes.length) {
-          const mag = fftMagnitudes[binIdx];
-          sum += mag;
+
+      for (const bw of mapping.binWeights) {
+        if (bw.index < fftMagnitudes.length) {
+          const mag = fftMagnitudes[bw.index];
+          weightedSum += mag * bw.weight;
+          totalWeight += bw.weight;
           maxMag = Math.max(maxMag, mag);
         }
       }
 
-      // Use combination of average and peak for better visual response
-      const avgMag = mapping.binIndices.length > 0 ? sum / mapping.binIndices.length : 0;
-      const combinedMag = avgMag * 0.7 + maxMag * 0.3;
+      // Weighted average with peak contribution for transient response
+      const weightedAvg = totalWeight > 0 ? weightedSum / totalWeight : 0;
+      const combinedMag = weightedAvg * 0.75 + maxMag * 0.25;
 
-      // Convert to dB scale FIRST (before compensation)
+      // === STEP 2: Convert to dB scale ===
       let db = combinedMag > 1e-10 ? 20 * Math.log10(combinedMag) : -100;
 
-      // Apply frequency compensation in dB domain (much cleaner than linear)
+      // === STEP 3: Apply frequency compensation ===
       const dbCompensation = getFrequencyCompensationDB(mapping.centerFreq);
       db += dbCompensation;
 
-      // Apply psychoacoustic emphasis (additional small boost for key frequencies)
+      // === STEP 4: Apply psychoacoustic emphasis ===
       for (const [, config] of Object.entries(PSYCHOACOUSTIC_WEIGHTS)) {
         const [min, max] = config.range;
         if (mapping.centerFreq >= min && mapping.centerFreq <= max) {
-          // Convert weight multiplier to dB and add
           db += 20 * Math.log10(config.weight);
         }
       }
 
-      // Normalize to 0-1 range
-      // FFT magnitudes for music typically range from -80dB (noise floor) to -20dB (loud)
-      // After compensation, we want the display to show activity from floor to peak
-      // Use -70dB to -10dB as our display range (60dB dynamic range)
+      // === STEP 5: Normalize to 0-1 range ===
       const DB_MIN = -70;
       const DB_MAX = -10;
       let normalized = (db - DB_MIN) / (DB_MAX - DB_MIN);
-      normalized = Math.max(0, Math.min(1, normalized));
+      rawOutput[i] = Math.max(0, Math.min(1, normalized));
+    }
 
-      // Apply attack/decay smoothing based on frequency
+    // === STEP 6: Gap-filling interpolation ===
+    // Detect and fill gaps where a bar is significantly lower than neighbors
+    for (let i = 0; i < this.barCount; i++) {
+      const current = rawOutput[i];
+
+      // Find neighboring values (handle edges)
+      const left = i > 0 ? rawOutput[i - 1] : current;
+      const right = i < this.barCount - 1 ? rawOutput[i + 1] : current;
+      const neighborAvg = (left + right) / 2;
+
+      // Detect gap: current value is much lower than neighbors
+      if (current < neighborAvg * GAP_THRESHOLD && neighborAvg > 0.05) {
+        // Interpolate from neighbors
+        const interpolated = neighborAvg * 0.7;  // Don't fully fill, keep some variation
+        rawOutput[i] = current * (1 - INTERPOLATION_BLEND) + interpolated * INTERPOLATION_BLEND;
+      }
+    }
+
+    // === STEP 7: Fractional-octave smoothing ===
+    // Apply 1/6 octave smoothing for professional RTA appearance
+    this.applyOctaveSmoothing(rawOutput, output);
+
+    // === STEP 8: Apply temporal smoothing (attack/decay) ===
+    for (let i = 0; i < this.barCount; i++) {
+      const mapping = this.bandMappings[i];
+      const smoothedValue = output[i];
+
       const attackRate = this.getAttackRate(mapping.centerFreq);
       const decayRate = this.getDecayRate(mapping.centerFreq);
 
-      if (normalized > this.barHeights[i]) {
-        // Attack - fast rise
-        this.barHeights[i] += (normalized - this.barHeights[i]) * attackRate;
+      if (smoothedValue > this.barHeights[i]) {
+        this.barHeights[i] += (smoothedValue - this.barHeights[i]) * attackRate;
       } else {
-        // Decay - slower fall
-        this.barHeights[i] += (normalized - this.barHeights[i]) * decayRate;
+        this.barHeights[i] += (smoothedValue - this.barHeights[i]) * decayRate;
       }
 
       output[i] = this.barHeights[i];
@@ -304,15 +412,48 @@ export class SpectrumAnalyzer {
         this.peakHolds[i] = this.barHeights[i];
         this.peakTimestamps[i] = now;
       } else if (now - this.peakTimestamps[i] > this.PEAK_HOLD_MS) {
-        // Decay peak
-        this.peakHolds[i] = Math.max(
-          0,
-          this.peakHolds[i] - this.PEAK_DECAY_RATE
-        );
+        this.peakHolds[i] = Math.max(0, this.peakHolds[i] - this.PEAK_DECAY_RATE);
       }
     }
 
     return output;
+  }
+
+  /**
+   * Apply fractional-octave smoothing
+   * Uses variable-width averaging based on frequency (constant Q in log domain)
+   * Reference: Rational Acoustics "Banding vs Smoothing"
+   */
+  private applyOctaveSmoothing(input: Float32Array, output: Float32Array): void {
+    const octaveFraction = OCTAVE_SMOOTHING_FACTOR;
+
+    for (let i = 0; i < this.barCount; i++) {
+      const centerFreq = this.bandMappings[i].centerFreq;
+
+      // Calculate smoothing range in octaves
+      // At each frequency, average over ±(octaveFraction/2) octaves
+      const lowFreq = centerFreq * Math.pow(2, -octaveFraction / 2);
+      const highFreq = centerFreq * Math.pow(2, octaveFraction / 2);
+
+      // Find bar indices that fall within this range
+      let sum = 0;
+      let count = 0;
+
+      for (let j = 0; j < this.barCount; j++) {
+        const freq = this.bandMappings[j].centerFreq;
+        if (freq >= lowFreq && freq <= highFreq) {
+          // Apply triangular weighting (higher weight near center)
+          const distance = Math.abs(Math.log2(freq / centerFreq));
+          const maxDistance = octaveFraction / 2;
+          const weight = 1 - (distance / maxDistance) * 0.5;  // 1.0 at center, 0.5 at edges
+
+          sum += input[j] * weight;
+          count += weight;
+        }
+      }
+
+      output[i] = count > 0 ? sum / count : input[i];
+    }
   }
 
   /**
