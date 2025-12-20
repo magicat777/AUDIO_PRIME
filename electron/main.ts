@@ -621,8 +621,8 @@ async function exchangeCodeForTokens(code: string): Promise<boolean> {
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      console.error('Token exchange failed:', error);
+      // Don't log response body - may contain sensitive error details
+      console.error('Token exchange failed: HTTP', response.status);
       return false;
     }
 
