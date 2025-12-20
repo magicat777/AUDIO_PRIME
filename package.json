@@ -2,7 +2,7 @@
   "name": "audio-prime",
   "version": "1.0.0",
   "description": "Professional web-based audio spectrum analyzer with full OMEGA feature parity",
-  "homepage": "https://github.com/jason-holt/audio-prime",
+  "homepage": "https://github.com/magicat777/AUDIO_PRIME",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -84,7 +84,7 @@
     "publish": {
       "provider": "github",
       "owner": "magicat777",
-      "repo": "live-audio-analyzer"
+      "repo": "AUDIO_PRIME"
     },
     "linux": {
       "target": [
