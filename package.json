@@ -1,12 +1,13 @@
 {
   "name": "audio-prime",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Professional web-based audio spectrum analyzer with full OMEGA feature parity",
   "homepage": "https://github.com/magicat777/AUDIO_PRIME",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && electron-builder",
+    "build": "npm run build:native && tsc && vite build && electron-builder",
+    "build:native": "node -e \"if (process.platform === 'darwin') require('child_process').execSync('./native/macos/build.sh', {stdio: 'inherit'})\"",
     "preview": "vite preview",
     "electron:dev": "vite build && electron .",
     "electron:build": "electron-builder",
@@ -79,7 +80,8 @@
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "dist-electron/**/*",
+      "build/macos/**/*"
     ],
     "extraResources": [
       {

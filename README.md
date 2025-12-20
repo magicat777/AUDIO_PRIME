@@ -4,7 +4,7 @@
 
 A modern, high-performance audio analysis application built with Electron + Svelte 5, featuring studio-grade metering, advanced visualizations, and Spotify integration.
 
-![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Version](https://img.shields.io/badge/version-1.2.0-blue)
 ![Electron](https://img.shields.io/badge/electron-35+-green)
 ![TypeScript](https://img.shields.io/badge/typescript-5.7+-blue)
 ![Svelte](https://img.shields.io/badge/svelte-5+-orange)
@@ -72,8 +72,8 @@ See [Releases](https://github.com/magicat777/AUDIO_PRIME/releases)
 
 #### Prerequisites
 - **Node.js** 18+ and npm
-- **Linux**: PipeWire or PulseAudio with `parec` command
-- **macOS**: Core Audio (built-in)
+- **Linux**: PipeWire or PulseAudio with `parec` command (typically pre-installed)
+- **macOS**: Xcode Command Line Tools for building native audio capture module
 
 #### Setup
 ```bash
@@ -168,10 +168,12 @@ Use the sidebar toggles to show/hide panels:
 ## Technical Details
 
 ### Audio Pipeline
-1. **Capture**: `parec` subprocess captures system audio via PipeWire/PulseAudio
-2. **Transport**: Raw PCM float32 data streamed to Electron main process
+1. **Capture**:
+   - **Linux**: `parec` subprocess captures system audio via PipeWire/PulseAudio
+   - **macOS**: CoreAudio native module captures system audio
+2. **Transport**: Raw PCM float32 data (48kHz stereo) streamed to Electron main process
 3. **Processing**: FFT analysis in AudioEngine with multi-resolution support
-4. **Rendering**: 60 FPS canvas rendering in Svelte 5 components
+4. **Rendering**: 60 FPS WebGL2/Canvas rendering in Svelte 5 components
 
 ### Performance
 - **Frame Rate**: Stable 60 FPS
@@ -186,7 +188,8 @@ Use the sidebar toggles to show/hide panels:
 | UI | Svelte 5 |
 | Build | Vite 6 |
 | Language | TypeScript 5.7 (strict mode) |
-| Rendering | Canvas 2D |
+| Rendering | WebGL2 + Canvas 2D |
+| Audio Capture | CoreAudio (macOS), PulseAudio/PipeWire (Linux) |
 | Testing | Vitest |
 | Linting | ESLint + Security plugins |
 
@@ -227,7 +230,7 @@ AUDIO_PRIME/
 
 ## Release Status
 
-### Current Release: v1.1.0 (Linux)
+### Current Release: v1.2.0 (macOS + Linux)
 
 | Phase | Status | Description |
 |-------|--------|-------------|
@@ -237,14 +240,14 @@ AUDIO_PRIME/
 | Phase 4 | ✅ Complete | Performance & Stability |
 | Phase 5 | ✅ Complete | Testing & Documentation |
 | Phase 6 | ✅ Complete | Distribution & Signing |
-| Phase 7 | ✅ Complete | Pre-Release Testing (Linux) |
-| Phase 8 | ✅ Complete | Delivery (Linux) |
+| Phase 7 | ✅ Complete | Pre-Release Testing |
+| Phase 8 | ✅ Complete | Delivery |
 
 ### Platform Support
 | Platform | Status | Version |
 |----------|--------|---------|
-| Linux | ✅ Released | v1.1.0 |
-| macOS | 🚧 In Development | v1.2.0 |
+| Linux | ✅ Released | v1.1.0+ |
+| macOS | ✅ Released | v1.2.0 |
 | Windows | 📋 Planned | v1.3.0 |
 
 ### Build Formats
@@ -253,7 +256,7 @@ AUDIO_PRIME/
 | Linux | AppImage | ✅ Available |
 | Linux | .deb | ✅ Available |
 | Linux | .rpm | ✅ Available |
-| macOS | .dmg (x64 + arm64) | 🚧 Coming v1.2.0 |
+| macOS | .dmg (x64 + arm64) | ✅ Available |
 | Windows | NSIS installer | 📋 Coming v1.3.0 |
 
 ### Security Hardening

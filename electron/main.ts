@@ -132,7 +132,8 @@ interface AudioDevice {
   state: 'running' | 'idle' | 'suspended';
 }
 
-async function getAudioSources(): Promise<AudioDevice[]> {
+// Platform-specific audio source enumeration
+async function getAudioSourcesLinux(): Promise<AudioDevice[]> {
   try {
     const { stdout } = await execAsync('pactl list sources 2>/dev/null');
     const devices: AudioDevice[] = [];
@@ -208,7 +209,64 @@ async function getAudioSources(): Promise<AudioDevice[]> {
 
     return devices;
   } catch (error) {
-    console.error('Error getting audio sources:', error);
+    console.error('Error getting Linux audio sources:', error);
+    return [];
+  }
+}
+
+async function getAudioSourcesMacOS(): Promise<AudioDevice[]> {
+  try {
+    const audioCaptureBin = join(__dirname, '../build/macos/AudioCapture');
+    const { stdout, stderr } = await execAsync(`"${audioCaptureBin}" --list 2>&1`);
+
+    const devices: AudioDevice[] = [];
+    const lines = (stdout + stderr).split('\n');
+
+    // Parse output format: "  UID: Name (X channels)"
+    for (const line of lines) {
+      const match = line.match(/^\s+(.+?):\s+(.+?)\s+\((\d+)\s+channels?\)/);
+      if (match) {
+        const id = match[1].trim();
+        const name = match[2].trim();
+        const channels = parseInt(match[3], 10);
+
+        devices.push({
+          id,
+          name,
+          description: name,
+          type: 'input',
+          sampleRate: 48000,
+          channels,
+          format: 'float32le',
+          state: 'idle',
+        });
+      }
+    }
+
+    return devices;
+  } catch (error) {
+    console.error('Error getting macOS audio sources:', error);
+    // Return default device
+    return [{
+      id: 'default',
+      name: 'Default Input',
+      description: 'System Default Audio Input',
+      type: 'input',
+      sampleRate: 48000,
+      channels: 2,
+      format: 'float32le',
+      state: 'idle',
+    }];
+  }
+}
+
+async function getAudioSources(): Promise<AudioDevice[]> {
+  if (process.platform === 'darwin') {
+    return await getAudioSourcesMacOS();
+  } else if (process.platform === 'linux') {
+    return await getAudioSourcesLinux();
+  } else {
+    console.error('Unsupported platform:', process.platform);
     return [];
   }
 }
@@ -218,35 +276,69 @@ function startAudioCapture(deviceId: string): void {
     audioProcess.kill();
   }
 
-  // Use parec for PipeWire/PulseAudio capture with low latency
-  audioProcess = spawn('parec', [
-    '--device', deviceId,
-    '--rate', '48000',
-    '--channels', '2',
-    '--format', 'float32le',
-    '--raw',
-    '--latency-msec', '10',  // Minimize capture latency
-  ]);
+  if (process.platform === 'darwin') {
+    // macOS: Use CoreAudio capture binary
+    const audioCaptureBin = join(__dirname, '../build/macos/AudioCapture');
+    const args = deviceId !== 'default' ? [deviceId] : [];
 
-  audioProcess.stdout?.on('data', (chunk: Buffer) => {
-    // Convert raw bytes to Float32Array
-    const samples = new Float32Array(chunk.buffer.slice(
-      chunk.byteOffset,
-      chunk.byteOffset + chunk.byteLength
-    ));
+    audioProcess = spawn(audioCaptureBin, args);
 
-    // Send to renderer process
-    mainWindow?.webContents.send(IPC.AUDIO_DATA, Array.from(samples));
-  });
+    audioProcess.stdout?.on('data', (chunk: Buffer) => {
+      // Convert raw bytes to Float32Array
+      const samples = new Float32Array(chunk.buffer.slice(
+        chunk.byteOffset,
+        chunk.byteOffset + chunk.byteLength
+      ));
 
-  audioProcess.stderr?.on('data', (data) => {
-    console.error('Audio capture error:', data.toString());
-  });
+      // Send to renderer process
+      mainWindow?.webContents.send(IPC.AUDIO_DATA, Array.from(samples));
+    });
 
-  audioProcess.on('close', (code) => {
-    console.log('Audio capture process exited with code:', code);
-    audioProcess = null;
-  });
+    audioProcess.stderr?.on('data', (data) => {
+      const message = data.toString();
+      // Filter out informational messages
+      if (!message.includes('Audio capture started') && !message.includes('INFO:')) {
+        console.error('Audio capture error:', message);
+      }
+    });
+
+    audioProcess.on('close', (code) => {
+      console.log('Audio capture process exited with code:', code);
+      audioProcess = null;
+    });
+  } else if (process.platform === 'linux') {
+    // Linux: Use parec for PipeWire/PulseAudio capture with low latency
+    audioProcess = spawn('parec', [
+      '--device', deviceId,
+      '--rate', '48000',
+      '--channels', '2',
+      '--format', 'float32le',
+      '--raw',
+      '--latency-msec', '10',  // Minimize capture latency
+    ]);
+
+    audioProcess.stdout?.on('data', (chunk: Buffer) => {
+      // Convert raw bytes to Float32Array
+      const samples = new Float32Array(chunk.buffer.slice(
+        chunk.byteOffset,
+        chunk.byteOffset + chunk.byteLength
+      ));
+
+      // Send to renderer process
+      mainWindow?.webContents.send(IPC.AUDIO_DATA, Array.from(samples));
+    });
+
+    audioProcess.stderr?.on('data', (data) => {
+      console.error('Audio capture error:', data.toString());
+    });
+
+    audioProcess.on('close', (code) => {
+      console.log('Audio capture process exited with code:', code);
+      audioProcess = null;
+    });
+  } else {
+    console.error('Unsupported platform for audio capture:', process.platform);
+  }
 }
 
 function stopAudioCapture(): void {
