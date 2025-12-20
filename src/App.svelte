@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import AppShell from './components/layout/AppShell.svelte';
+  import ErrorBoundary from './components/layout/ErrorBoundary.svelte';
   import { audioEngine } from './core/AudioEngine';
   import { performanceMonitor } from './core/PerformanceMonitor';
 
@@ -37,7 +38,9 @@
       <p>Initializing AUDIO_PRIME...</p>
     </div>
   {:else}
-    <AppShell />
+    <ErrorBoundary fallbackMessage="An error occurred in the application">
+      <AppShell />
+    </ErrorBoundary>
   {/if}
 </main>
 

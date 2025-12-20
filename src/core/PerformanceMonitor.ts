@@ -15,6 +15,7 @@ export interface PerformanceStats {
   memoryUsage: number;
   cpuPercent: number;
   gpuPercent: number;
+  memoryTrend: 'stable' | 'growing' | 'warning';
 }
 
 class PerformanceMonitorClass {
@@ -27,6 +28,11 @@ class PerformanceMonitorClass {
   private frameTimes: number[] = [];
   private animationFrame: number | null = null;
 
+  // Memory leak detection
+  private memoryHistory: number[] = [];
+  private readonly MEMORY_HISTORY_SIZE = 60;  // Track last 60 samples (1 minute)
+  private readonly MEMORY_GROWTH_THRESHOLD = 50;  // MB growth that triggers warning
+
   constructor() {
     this.stats = writable<PerformanceStats>({
       fps: 0,
@@ -38,6 +44,7 @@ class PerformanceMonitorClass {
       memoryUsage: 0,
       cpuPercent: 0,
       gpuPercent: 0,
+      memoryTrend: 'stable',
     });
   }
 
@@ -93,6 +100,15 @@ class PerformanceMonitorClass {
         memoryUsage = (performance as any).memory.usedJSHeapSize / (1024 * 1024);
       }
 
+      // Track memory history for leak detection
+      this.memoryHistory.push(memoryUsage);
+      if (this.memoryHistory.length > this.MEMORY_HISTORY_SIZE) {
+        this.memoryHistory.shift();
+      }
+
+      // Detect memory trend
+      const memoryTrend = this.detectMemoryTrend();
+
       // Get CPU/GPU metrics from Electron
       let cpuPercent = 0;
       let gpuPercent = 0;
@@ -116,6 +132,7 @@ class PerformanceMonitorClass {
         memoryUsage,
         cpuPercent,
         gpuPercent,
+        memoryTrend,
       });
     }
 
@@ -128,6 +145,46 @@ class PerformanceMonitorClass {
       ...s,
       audioLatency: latencyMs,
     }));
+  }
+
+  // Detect memory growth trend for leak detection
+  private detectMemoryTrend(): 'stable' | 'growing' | 'warning' {
+    if (this.memoryHistory.length < 10) {
+      return 'stable';  // Not enough data yet
+    }
+
+    // Compare first third to last third of history
+    const thirdSize = Math.floor(this.memoryHistory.length / 3);
+    const firstThird = this.memoryHistory.slice(0, thirdSize);
+    const lastThird = this.memoryHistory.slice(-thirdSize);
+
+    const avgFirst = firstThird.reduce((a, b) => a + b, 0) / firstThird.length;
+    const avgLast = lastThird.reduce((a, b) => a + b, 0) / lastThird.length;
+
+    const growth = avgLast - avgFirst;
+
+    if (growth > this.MEMORY_GROWTH_THRESHOLD) {
+      console.warn(`Memory leak warning: ${growth.toFixed(1)}MB growth detected over ${this.memoryHistory.length} seconds`);
+      return 'warning';
+    } else if (growth > this.MEMORY_GROWTH_THRESHOLD / 2) {
+      return 'growing';
+    }
+
+    return 'stable';
+  }
+
+  // Get memory stats for debugging
+  getMemoryStats(): { current: number; min: number; max: number; trend: string } {
+    const current = this.memoryHistory[this.memoryHistory.length - 1] || 0;
+    const min = this.memoryHistory.length > 0 ? Math.min(...this.memoryHistory) : 0;
+    const max = this.memoryHistory.length > 0 ? Math.max(...this.memoryHistory) : 0;
+
+    return {
+      current,
+      min,
+      max,
+      trend: this.detectMemoryTrend(),
+    };
   }
 }
 

@@ -23,6 +23,19 @@ dotenvConfig({ path: join(app.getAppPath(), '.env') });
 
 const execAsync = promisify(exec);
 
+// Global error handlers for stability
+process.on('uncaughtException', (error: Error) => {
+  console.error('Uncaught Exception:', error.message);
+  console.error('Stack:', error.stack);
+  // Don't exit - try to keep the app running
+  // In production, this would also send to crash reporting service
+});
+
+process.on('unhandledRejection', (reason: unknown) => {
+  console.error('Unhandled Promise Rejection:', reason);
+  // In production, this would also send to crash reporting service
+});
+
 // Audio capture process
 let audioProcess: ChildProcess | null = null;
 
