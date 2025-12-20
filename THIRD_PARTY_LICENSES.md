@@ -8,8 +8,19 @@ AUDIO_PRIME includes the following third-party open source software:
 |---------|---------|------------|
 | [@interactjs/types](https://github.com/taye/interact.js) | MIT | https://github.com/taye/interact.js |
 | [comlink](https://github.com/GoogleChromeLabs/comlink) | Apache-2.0 | https://github.com/GoogleChromeLabs/comlink |
+| [dotenv](https://github.com/motdotla/dotenv) | BSD-2-Clause | https://github.com/motdotla/dotenv |
 | [fft.js](https://github.com/indutny/fft.js) | MIT | https://github.com/indutny/fft.js |
 | [interactjs](https://github.com/taye/interact.js) | MIT | https://github.com/taye/interact.js |
+
+## License Summary
+
+All production dependencies use permissive licenses compatible with commercial distribution:
+
+| License | Count | Commercial Use |
+|---------|-------|----------------|
+| MIT | 3 | Allowed |
+| Apache-2.0 | 1 | Allowed |
+| BSD-2-Clause | 1 | Allowed |
 
 ## License Texts
 
