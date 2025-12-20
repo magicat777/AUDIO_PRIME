@@ -12,6 +12,14 @@ A modern, high-performance audio analysis application built with Electron + Svel
 
 ---
 
+<p align="center">
+  <img src="audio_prime_layout_all.png" alt="AUDIO_PRIME Screenshot" width="900">
+  <br>
+  <em>Full application layout with spectrum analyzer, LUFS metering, BPM detection, voice analysis, and Spotify integration</em>
+</p>
+
+---
+
 ## Features
 
 ### Spectrum Analysis
