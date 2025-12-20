@@ -2,12 +2,13 @@
 
 > Professional Real-Time Audio Spectrum Analyzer & Visualizer
 
-A modern, high-performance audio analysis application built with Electron, featuring studio-grade metering, advanced visualizations, and Spotify integration.
+A modern, high-performance audio analysis application built with Electron + Svelte 5, featuring studio-grade metering, advanced visualizations, and Spotify integration.
 
 ![Version](https://img.shields.io/badge/version-1.1.0-blue)
-![Electron](https://img.shields.io/badge/electron-28+-green)
-![TypeScript](https://img.shields.io/badge/typescript-5.0+-blue)
-![Svelte](https://img.shields.io/badge/svelte-4+-orange)
+![Electron](https://img.shields.io/badge/electron-35+-green)
+![TypeScript](https://img.shields.io/badge/typescript-5.7+-blue)
+![Svelte](https://img.shields.io/badge/svelte-5+-orange)
+![License](https://img.shields.io/badge/license-MIT-green)
 
 ---
 
@@ -18,39 +19,58 @@ A modern, high-performance audio analysis application built with Electron, featu
 - **Enhanced Bass Detail** - Dedicated panel with optimized 20-500Hz resolution
 - **Waterfall Spectrogram** - Time-frequency visualization with 60 FPS scrolling
 - **Frequency Band Analysis** - Sub, Low, Mid, High, Presence, Air breakdown
+- **Multi-Resolution FFT** - Adaptive resolution for optimal frequency/time tradeoff
 
 ### Professional Metering
 - **LUFS Metering** - ITU-R BS.1770-4 compliant loudness measurement
   - Momentary (400ms)
   - Short-term (3s)
   - Integrated (gated)
-  - True Peak detection
+  - True Peak detection (4x oversampling)
 - **VU Meters** - Dual channel with peak hold indicators
 - **BPM Detection** - Real-time tempo tracking with beat phase visualization
 
 ### Voice Analysis
 - **Voice Activity Detection** - Real-time voice/no-voice classification
 - **Voice Type Classification** - Singing vs. speech detection
-- **Formant Tracking** - F1, F2, F3 frequency analysis
+- **Formant Tracking** - F1-F4 frequency analysis
+- **Vibrato Detection** - 4.5-8.5 Hz modulation tracking
 - **Pitch Detection** - Fundamental frequency estimation
+
+### Stereo Analysis
+- **Goniometer** - Lissajous stereo field display
+- **Correlation Meter** - Phase relationship (-1 to +1)
+- **M/S Metering** - Mid/Side level analysis
+- **Oscilloscope** - Waveform display with auto-gain
 
 ### Spotify Integration
 - **Now Playing** - Track, artist, album display with album art
 - **Playback Controls** - Play/Pause, Previous, Next, Seek
-- **OAuth Authentication** - Secure connection with token refresh
+- **OAuth Authentication** - Secure PKCE flow with encrypted token storage
 
 ---
 
 ## Installation
 
-### Prerequisites
-- **Node.js** 18+ and npm
-- **Linux** with PipeWire or PulseAudio
-- **parec** command available (usually part of pulseaudio-utils)
+### Download (Recommended)
 
-### Setup
+Download the latest release for your platform:
+- **Linux**: `.AppImage` (universal), `.deb` (Ubuntu/Debian), `.rpm` (Fedora/RHEL)
+- **macOS**: `.dmg` (Intel & Apple Silicon)
+
+See [Releases](https://github.com/magicat777/AUDIO_PRIME/releases)
+
+### Build from Source
+
+#### Prerequisites
+- **Node.js** 18+ and npm
+- **Linux**: PipeWire or PulseAudio with `parec` command
+- **macOS**: Core Audio (built-in)
+
+#### Setup
 ```bash
-# Navigate to AUDIO_PRIME directory
+# Clone repository
+git clone https://github.com/magicat777/AUDIO_PRIME.git
 cd AUDIO_PRIME
 
 # Install dependencies
@@ -65,33 +85,45 @@ npm run build
 
 ---
 
+## Spotify Setup
+
+1. Create a Spotify Developer application at [developer.spotify.com](https://developer.spotify.com/dashboard)
+2. Add `http://127.0.0.1:8888/callback` as a Redirect URI
+3. Create a `.env` file in the project root:
+   ```
+   SPOTIFY_CLIENT_ID=your_client_id_here
+   SPOTIFY_CLIENT_SECRET=your_client_secret_here
+   ```
+4. Restart the application
+5. Click "Connect to Spotify" in the Spotify panel
+
+**Note:** Spotify Premium is required for playback controls.
+
+---
+
 ## Usage
 
 ### Keyboard Shortcuts
 
 | Key | Action |
 |-----|--------|
-| `Space` | Start/Stop audio capture |
+| `Space` | Toggle mute |
 | `M` | Toggle mute |
 | `F` | Toggle fullscreen |
 | `D` | Toggle debug panel |
-| `T` | Cycle color themes |
-| `B` | Toggle beat flash effect |
-| `1` | Window: 1280×720 |
-| `2` | Window: 1600×900 |
-| `3` | Window: 1920×1080 |
-| `4` | Window: 2000×900 |
-| `5` | Window: 2560×1080 |
-| `6` | Window: 2560×1440 |
+| `T` | Reset tempo detection |
+| `B` | Toggle bass waterfall |
+| `1-6` | Window size presets |
 
-### Panel Toggles
-Use the sidebar to show/hide:
+### Panel Controls
+Use the sidebar toggles to show/hide panels:
 - Spectrum Analyzer
 - VU Meters
 - Bass Detail & Waterfall
 - LUFS Metering
 - BPM/Tempo
 - Voice Detection
+- Stereo Analysis
 - Debug Panel
 - Spotify
 
@@ -101,25 +133,25 @@ Use the sidebar to show/hide:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         AUDIO_PRIME                              │
+│                         AUDIO_PRIME                             │
 ├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │                    SPECTRUM ANALYZER                     │    │
-│  │              512 bars • 20Hz-20kHz • Logarithmic        │    │
-│  └─────────────────────────────────────────────────────────┘    │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │                    SPECTRUM ANALYZER                     │   │
+│  │              512 bars • 20Hz-20kHz • Logarithmic        │   │
+│  └─────────────────────────────────────────────────────────┘   │
 ├─────────────────────────────────────────────────────────────────┤
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────┐ │
 │  │   VU L   │ │   VU R   │ │   LUFS   │ │   BPM    │ │ VOICE │ │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └───────┘ │
 ├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────┐ ┌─────────────────────────────────┐    │
-│  │    BASS DETAIL      │ │          WATERFALL              │    │
-│  │    20-500Hz         │ │       Time-Frequency            │    │
-│  └─────────────────────┘ └─────────────────────────────────┘    │
+│  ┌─────────────────────┐ ┌─────────────────────────────────┐   │
+│  │    BASS DETAIL      │ │          WATERFALL              │   │
+│  │    20-500Hz         │ │       Time-Frequency            │   │
+│  └─────────────────────┘ └─────────────────────────────────┘   │
 ├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │  🎵 SPOTIFY: Track Name • Artist • Album    ◀ ▶ ▶▶     │    │
-│  └─────────────────────────────────────────────────────────┘    │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  SPOTIFY: Track Name • Artist • Album       ◀ ▶ ▶▶     │   │
+│  └─────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -129,83 +161,116 @@ Use the sidebar to show/hide:
 
 ### Audio Pipeline
 1. **Capture**: `parec` subprocess captures system audio via PipeWire/PulseAudio
-2. **Transport**: Raw PCM data streamed to Electron main process
+2. **Transport**: Raw PCM float32 data streamed to Electron main process
 3. **Processing**: FFT analysis in AudioEngine with multi-resolution support
-4. **Rendering**: 60 FPS canvas rendering in Svelte components
+4. **Rendering**: 60 FPS canvas rendering in Svelte 5 components
 
 ### Performance
 - **Frame Rate**: Stable 60 FPS
-- **Audio Latency**: ~5ms end-to-end
+- **Audio Latency**: ~10ms end-to-end
 - **FFT Processing**: ~1.5ms per frame
-- **Memory Usage**: ~150MB typical
+- **Memory Usage**: ~150MB typical (with leak detection)
 
 ### Tech Stack
-- **Electron** - Desktop application framework
-- **Vite** - Build tool and dev server
-- **TypeScript** - Type-safe development
-- **Svelte** - Reactive UI components
-- **Canvas 2D** - Hardware-accelerated rendering
+| Component | Technology |
+|-----------|------------|
+| Framework | Electron 35 |
+| UI | Svelte 5 |
+| Build | Vite 6 |
+| Language | TypeScript 5.7 (strict mode) |
+| Rendering | Canvas 2D |
+| Testing | Vitest |
+| Linting | ESLint + Security plugins |
 
 ---
 
-## Spotify Setup
+## Project Structure
 
-1. Create a Spotify Developer application at [developer.spotify.com](https://developer.spotify.com/dashboard)
-2. Add `http://127.0.0.1:8888/callback` as a redirect URI
-3. Update credentials in `src/config/spotify.ts`
-4. Click "Connect to Spotify" in the app
+```
+AUDIO_PRIME/
+├── electron/              # Main process
+│   ├── main.ts            # Electron entry, IPC handlers, auto-updater
+│   └── preload.ts         # Context bridge
+├── src/
+│   ├── components/        # Svelte 5 components
+│   │   ├── layout/        # AppShell, ErrorBoundary
+│   │   ├── panels/        # Spectrum, LUFS, BPM, Voice, etc.
+│   │   └── spotify/       # Spotify integration
+│   ├── core/              # AudioEngine, PerformanceMonitor
+│   ├── analysis/          # LUFSMeter, BeatDetector
+│   ├── stores/            # Svelte stores
+│   └── types/             # TypeScript definitions
+├── tests/                 # Vitest test suites
+├── docs/                  # Documentation
+│   ├── USER_GUIDE.md      # Comprehensive user documentation
+│   ├── INSTALLATION.md    # Installation instructions
+│   ├── TROUBLESHOOTING.md # Common issues & solutions
+│   └── DELIVERY_PLAN.md   # Commercial release roadmap
+├── build/                 # Build resources
+│   └── entitlements.mac.plist
+├── .github/workflows/     # CI/CD
+│   └── security.yml       # Automated security scanning
+├── CHANGELOG.md           # Version history
+├── LICENSE                # MIT License
+└── THIRD_PARTY_LICENSES.md
+```
 
-**Required Scopes:**
-- `user-read-currently-playing`
-- `user-read-playback-state`
-- `user-modify-playback-state`
+---
+
+## Release Status
+
+### Commercial Release Preparation
+
+| Phase | Status | Description |
+|-------|--------|-------------|
+| Phase 1 | ✅ Complete | Dependency & Framework Security |
+| Phase 2 | ✅ Complete | Code Quality & Static Analysis |
+| Phase 3 | ✅ Complete | API & Authentication Security |
+| Phase 4 | ✅ Complete | Performance & Stability |
+| Phase 5 | ✅ Complete | Testing & Documentation |
+| Phase 6 | ✅ Complete | Distribution & Signing |
+| Phase 7 | ⏳ Pending | Pre-Release Testing |
+| Phase 8 | ⏳ Pending | Delivery |
+
+### Security Hardening
+- ✅ Electron 35 with hardened security flags
+- ✅ Content Security Policy (CSP)
+- ✅ Context isolation & disabled node integration
+- ✅ Encrypted token storage (safeStorage)
+- ✅ Environment-based credential management
+- ✅ ESLint security plugins
+- ✅ Automated vulnerability scanning (CI/CD)
+
+### Build Targets
+| Platform | Format | Status |
+|----------|--------|--------|
+| Linux | AppImage | ✅ |
+| Linux | .deb | ✅ |
+| Linux | .rpm | ✅ |
+| macOS | .dmg (x64 + arm64) | ✅ Configured |
+| Windows | NSIS installer | ✅ Configured |
 
 ---
 
 ## Development
 
-### Project Structure
-```
-AUDIO_PRIME/
-├── electron/           # Main process
-│   ├── main.ts         # Electron entry, IPC handlers
-│   └── preload.ts      # Context bridge
-├── src/
-│   ├── components/     # Svelte components
-│   ├── core/           # AudioEngine, SpotifyService
-│   ├── stores/         # Svelte stores
-│   ├── types/          # TypeScript definitions
-│   └── config/         # Configuration
-├── docs/               # Documentation
-│   └── DEVELOPMENT_PLAN.md
-└── package.json
-```
-
 ### Commands
 ```bash
-npm run dev      # Start dev server with hot reload
-npm run build    # Build for production
-npm run preview  # Preview production build
-npm run lint     # Run ESLint
+npm run dev          # Start dev server with hot reload
+npm run build        # Build for production (all platforms)
+npm run test         # Run test suite
+npm run lint         # Run ESLint
+npm run type-check   # TypeScript validation
 ```
 
----
-
-## Roadmap
-
-See [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md) for the full feature roadmap including:
-
-- **Phase 1**: Quick wins (RMS, LRA, Crest Factor, Frequency Cursor)
-- **Phase 2**: Stereo analysis (Correlation Meter, Goniometer, M/S Mode)
-- **Phase 3**: Enhanced visualization (Oscilloscope, Octave Bands)
-- **Phase 4**: Advanced analysis (Spectral Centroid, Harmonics, 3D Spectrogram)
-- **Phase 5**: Pro features (Multi-track, Surround, Recording)
+### Contributing
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
 ## License
 
-MIT License - See LICENSE file for details.
+MIT License - See [LICENSE](LICENSE) file for details.
 
 ---
 
