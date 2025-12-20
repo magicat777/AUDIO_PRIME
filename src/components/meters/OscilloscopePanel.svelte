@@ -23,6 +23,9 @@
   const MAX_GAIN = 50;  // Max amplification for quiet signals
   const TARGET_AMPLITUDE = 0.7; // Target peak amplitude on screen
 
+  // Pre-allocated buffer for mono conversion (PERFORMANCE: avoid allocation per frame)
+  let monoWaveformBuffer: Float32Array | null = null;
+
   onMount(() => {
     ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -55,11 +58,17 @@
 
     // Use stereo samples for better visualization (interleaved L/R)
     const stereoSamples = get(audioEngine.stereoSamples);
+    const monoLength = stereoSamples.length / 2;
+
+    // PERFORMANCE: Reuse pre-allocated buffer instead of creating new array each frame
+    if (!monoWaveformBuffer || monoWaveformBuffer.length !== monoLength) {
+      monoWaveformBuffer = new Float32Array(monoLength);
+    }
+    const waveform = monoWaveformBuffer;
 
     // Convert to mono for display
-    const waveform = new Float32Array(stereoSamples.length / 2);
-    for (let i = 0; i < waveform.length; i++) {
-      waveform[i] = (stereoSamples[i * 2] + stereoSamples[i * 2 + 1]) / 2;
+    for (let i = 0; i < monoLength; i++) {
+      waveform[i] = (stereoSamples[i * 2] + stereoSamples[i * 2 + 1]) * 0.5;
     }
 
     const width = canvas.width;

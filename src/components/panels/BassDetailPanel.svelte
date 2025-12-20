@@ -5,6 +5,7 @@
 
   let canvas: HTMLCanvasElement;
   let waterfallCanvas: HTMLCanvasElement;
+  let bassGraphContainer: HTMLDivElement;
   let ctx: CanvasRenderingContext2D | null = null;
   let waterfallCtx: CanvasRenderingContext2D | null = null;
   let animationId: number | null = null;
@@ -13,6 +14,15 @@
   // Bass frequency range for display
   const MIN_FREQ = 20;
   const MAX_FREQ = 200;
+
+  // Frequency cursor state
+  let cursorX = 0;
+  let cursorY = 0;
+  let cursorVisible = false;
+  let cursorFreq = 0;
+  let cursorDb = -100;
+  let containerWidth = 0;
+  let containerHeight = 0;
 
   // Frequency labels for bass region
   const FREQ_LABELS = [20, 30, 40, 50, 60, 80, 100, 120, 150, 200];
@@ -81,11 +91,66 @@
   const BASS_END_BAR = freqToBar(MAX_FREQ);    // ~166 bars cover 20-200Hz
   const BASS_BAR_COUNT = BASS_END_BAR - BASS_START_BAR + 1;
 
+  // PERFORMANCE: Cache gradient to avoid recreation every frame
+  let cachedGradient: CanvasGradient | null = null;
+  let cachedGradientHeight = 0;
+
 
   // Subscribe to spectrum data (now 0-1 normalized bar values)
   const unsubscribe = audioEngine.spectrum.subscribe((data) => {
     spectrum = data;
   });
+
+  // Frequency cursor handlers
+  const padding = { left: 45, right: 15, top: 20, bottom: 30 };
+
+  function handleMouseMove(event: MouseEvent) {
+    if (!bassGraphContainer) return;
+
+    const rect = bassGraphContainer.getBoundingClientRect();
+    cursorX = event.clientX - rect.left;
+    cursorY = event.clientY - rect.top;
+    containerWidth = rect.width;
+    containerHeight = rect.height;
+    cursorVisible = true;
+
+    // Calculate frequency and dB at cursor position
+    const graphWidth = containerWidth - padding.left - padding.right;
+    const graphHeight = containerHeight - padding.top - padding.bottom;
+
+    // Check if cursor is within graph area
+    if (cursorX >= padding.left && cursorX <= containerWidth - padding.right &&
+        cursorY >= padding.top && cursorY <= containerHeight - padding.bottom) {
+
+      // Calculate normalized position (0-1) in graph area
+      const normalizedX = (cursorX - padding.left) / graphWidth;
+
+      // Logarithmic frequency mapping for bass (20Hz - 200Hz)
+      const logMin = Math.log10(MIN_FREQ);
+      const logMax = Math.log10(MAX_FREQ);
+      const logFreq = logMin + normalizedX * (logMax - logMin);
+      cursorFreq = Math.pow(10, logFreq);
+
+      // Get the closest bar index in the bass range
+      const bassBarIndex = Math.floor(normalizedX * BASS_BAR_COUNT);
+      const barIndex = BASS_START_BAR + Math.max(0, Math.min(BASS_BAR_COUNT - 1, bassBarIndex));
+
+      // Get the amplitude value (0-1 linear) and convert to dB
+      const amplitude = spectrum[barIndex] || 0;
+      cursorDb = amplitude > 0.001 ? -60 + amplitude * 60 : -100;
+    } else {
+      cursorFreq = 0;
+    }
+  }
+
+  function handleMouseLeave() {
+    cursorVisible = false;
+  }
+
+  // Format frequency for display
+  function formatFreq(freq: number): string {
+    return freq.toFixed(0) + ' Hz';
+  }
 
   onMount(() => {
     ctx = canvas.getContext('2d', { alpha: false });
@@ -191,12 +256,15 @@
       ctx.lineTo(padding.left, height - padding.bottom);
       ctx.closePath();
 
-      // Gradient fill for bass
-      const gradient = ctx.createLinearGradient(0, padding.top, 0, height - padding.bottom);
-      gradient.addColorStop(0, 'rgba(139, 92, 246, 0.8)'); // Purple at top
-      gradient.addColorStop(0.3, 'rgba(239, 68, 68, 0.6)'); // Red
-      gradient.addColorStop(1, 'rgba(139, 92, 246, 0.1)'); // Fade at bottom
-      ctx.fillStyle = gradient;
+      // PERFORMANCE: Use cached gradient, only recreate on resize
+      if (!cachedGradient || cachedGradientHeight !== height) {
+        cachedGradient = ctx.createLinearGradient(0, padding.top, 0, height - padding.bottom);
+        cachedGradient.addColorStop(0, 'rgba(139, 92, 246, 0.8)'); // Purple at top
+        cachedGradient.addColorStop(0.3, 'rgba(239, 68, 68, 0.6)'); // Red
+        cachedGradient.addColorStop(1, 'rgba(139, 92, 246, 0.1)'); // Fade at bottom
+        cachedGradientHeight = height;
+      }
+      ctx.fillStyle = cachedGradient;
       ctx.fill();
 
       // Draw outline
@@ -367,9 +435,29 @@
   });
 </script>
 
+<!-- svelte-ignore a11y-no-static-element-interactions -->
 <div class="bass-panel">
-  <div class="bass-graph" class:expanded={!$moduleVisibility.waterfall}>
+  <div
+    class="bass-graph"
+    class:expanded={!$moduleVisibility.waterfall}
+    bind:this={bassGraphContainer}
+    on:mousemove={handleMouseMove}
+    on:mouseleave={handleMouseLeave}
+  >
     <canvas bind:this={canvas}></canvas>
+
+    <!-- Frequency Cursor -->
+    {#if cursorVisible && cursorFreq > 0}
+      <div class="cursor-line" style="left: {cursorX}px;"></div>
+      <div
+        class="cursor-tooltip"
+        style="left: {cursorX}px; top: {cursorY}px;"
+        class:flip-left={cursorX > containerWidth - 100}
+      >
+        <span class="cursor-freq">{formatFreq(cursorFreq)}</span>
+        <span class="cursor-db">{cursorDb > -99 ? cursorDb.toFixed(1) : '---'} dB</span>
+      </div>
+    {/if}
   </div>
   <div class="waterfall-section" class:hidden={!$moduleVisibility.waterfall}>
     <div class="waterfall-header">
@@ -464,5 +552,52 @@
   .waterfall-section canvas {
     flex: 1;
     width: 100%;
+  }
+
+  /* Frequency Cursor */
+  .bass-graph {
+    position: relative;
+  }
+
+  .cursor-line {
+    position: absolute;
+    top: 20px;
+    bottom: 30px;
+    width: 1px;
+    background: rgba(139, 92, 246, 0.6);
+    pointer-events: none;
+    z-index: 15;
+  }
+
+  .cursor-tooltip {
+    position: absolute;
+    transform: translate(8px, -50%);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 8px;
+    background: rgba(20, 25, 35, 0.95);
+    border: 1px solid rgba(139, 92, 246, 0.5);
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 25;
+    white-space: nowrap;
+  }
+
+  .cursor-tooltip.flip-left {
+    transform: translate(-100%, -50%) translateX(-8px);
+  }
+
+  .cursor-freq {
+    font-size: 11px;
+    font-family: monospace;
+    font-weight: 600;
+    color: rgb(139, 92, 246);
+  }
+
+  .cursor-db {
+    font-size: 10px;
+    font-family: monospace;
+    color: var(--text-secondary);
   }
 </style>

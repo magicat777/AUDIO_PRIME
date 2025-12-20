@@ -13,6 +13,13 @@
   // Canvas dimensions
   const SIZE = 180;
 
+  // PERFORMANCE: Pre-computed decay lookup table (0.94 multiplier)
+  // This avoids multiplication and Math.floor in the hot loop
+  const DECAY_LUT = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) {
+    DECAY_LUT[i] = (i * 0.94) | 0;  // Bitwise OR for fast floor
+  }
+
   onMount(() => {
     ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
@@ -43,11 +50,13 @@
     const scale = Math.min(width, height) / 2 - 12;
 
     // Decay the persistence buffer (phosphor effect)
+    // PERFORMANCE: Use lookup table instead of multiplication + Math.floor
     const data = persistenceBuffer.data;
     for (let i = 0; i < data.length; i += 4) {
-      data[i] = Math.floor(data[i] * 0.94);     // R
-      data[i + 1] = Math.floor(data[i + 1] * 0.94); // G
-      data[i + 2] = Math.floor(data[i + 2] * 0.94); // B
+      data[i] = DECAY_LUT[data[i]];         // R
+      data[i + 1] = DECAY_LUT[data[i + 1]]; // G
+      data[i + 2] = DECAY_LUT[data[i + 2]]; // B
+      // Skip alpha (i + 3), it stays at 255
     }
 
     // Get stereo samples

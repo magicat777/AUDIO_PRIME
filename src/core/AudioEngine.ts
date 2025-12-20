@@ -83,6 +83,13 @@ class AudioEngineClass {
   private bufferWritePos = 0;
   private samplesSinceLastFFT = 0;
 
+  // PERFORMANCE: Pre-allocated buffers to avoid GC pressure
+  private stereoSampleBuffer: Float32Array;
+  private monoSampleBuffer: Float32Array;
+  private fftInputBuffer: Float32Array;
+  private multiResInputBuffer: Float32Array;
+  private waveformBuffer: Float32Array;
+
   // Analysis modules
   private lufsMeter: LUFSMeter;
   private truePeakDetector: TruePeakDetector;
@@ -146,6 +153,13 @@ class AudioEngineClass {
 
     // Pre-allocate audio buffer (large enough for max FFT size)
     this.audioBuffer = new Float32Array(FFT_SIZE_MAX * 2);
+
+    // PERFORMANCE: Pre-allocate processing buffers to avoid per-frame allocations
+    this.stereoSampleBuffer = new Float32Array(2048);  // 1024 stereo pairs for goniometer
+    this.monoSampleBuffer = new Float32Array(4096);    // Mono conversion buffer
+    this.fftInputBuffer = new Float32Array(FFT_SIZE);  // Standard FFT input
+    this.multiResInputBuffer = new Float32Array(FFT_SIZE_MAX);  // Multi-res FFT input
+    this.waveformBuffer = new Float32Array(1024);      // Waveform display buffer
 
     // Initialize analysis modules
     this.lufsMeter = new LUFSMeter(SAMPLE_RATE, 2);
@@ -783,10 +797,19 @@ class AudioEngineClass {
     });
 
     // Store stereo samples for goniometer display (last 2048 samples = 1024 pairs)
+    // PERFORMANCE: Copy into pre-allocated buffer instead of creating new array
     if (samples.length >= 2048) {
-      this.stereoSamples.set(samples.slice(samples.length - 2048));
+      const startIdx = samples.length - 2048;
+      for (let i = 0; i < 2048; i++) {
+        this.stereoSampleBuffer[i] = samples[startIdx + i];
+      }
+      this.stereoSamples.set(this.stereoSampleBuffer);
     } else if (samples.length > 0) {
-      this.stereoSamples.set(samples.slice());
+      // For smaller buffers, still avoid slice
+      for (let i = 0; i < samples.length && i < 2048; i++) {
+        this.stereoSampleBuffer[i] = samples[i];
+      }
+      this.stereoSamples.set(this.stereoSampleBuffer.subarray(0, samples.length));
     }
 
     // Process LUFS metering (expects interleaved stereo)
@@ -802,46 +825,60 @@ class AudioEngineClass {
     });
 
     // Mix to mono and add to buffer
-    const monoSamples = new Float32Array(samples.length / 2);
-    for (let i = 0; i < monoSamples.length; i++) {
-      monoSamples[i] = (samples[i * 2] + samples[i * 2 + 1]) / 2;
+    // PERFORMANCE: Use pre-allocated buffer, resize only if needed
+    const monoLength = samples.length / 2;
+    let monoSamples: Float32Array;
+    if (monoLength <= this.monoSampleBuffer.length) {
+      monoSamples = this.monoSampleBuffer;
+    } else {
+      // Rare case: input larger than expected, reallocate
+      this.monoSampleBuffer = new Float32Array(monoLength);
+      monoSamples = this.monoSampleBuffer;
     }
 
-    // Update waveform
-    if (monoSamples.length >= 1024) {
-      this.waveform.set(monoSamples.slice(0, 1024));
+    for (let i = 0; i < monoLength; i++) {
+      monoSamples[i] = (samples[i * 2] + samples[i * 2 + 1]) * 0.5;
+    }
+
+    // Update waveform using pre-allocated buffer
+    if (monoLength >= 1024) {
+      for (let i = 0; i < 1024; i++) {
+        this.waveformBuffer[i] = monoSamples[i];
+      }
+      this.waveform.set(this.waveformBuffer);
     }
 
     // Accumulate in ring buffer
-    for (let i = 0; i < monoSamples.length; i++) {
+    for (let i = 0; i < monoLength; i++) {
       this.audioBuffer[this.bufferWritePos] = monoSamples[i];
       this.bufferWritePos = (this.bufferWritePos + 1) % this.audioBuffer.length;
     }
 
     // Track samples and trigger FFT at hop intervals
-    this.samplesSinceLastFFT += monoSamples.length;
+    this.samplesSinceLastFFT += monoLength;
 
     // Send to FFT workers when we've accumulated enough samples
     while (this.samplesSinceLastFFT >= FFT_HOP_SIZE) {
       // Standard FFT (4096 samples)
-      const fftInput = new Float32Array(FFT_SIZE);
+      // PERFORMANCE: Use pre-allocated buffer
       const startPos = (this.bufferWritePos - FFT_SIZE + this.audioBuffer.length) % this.audioBuffer.length;
 
       for (let i = 0; i < FFT_SIZE; i++) {
-        fftInput[i] = this.audioBuffer[(startPos + i) % this.audioBuffer.length];
+        this.fftInputBuffer[i] = this.audioBuffer[(startPos + i) % this.audioBuffer.length];
       }
 
-      this.fftWorker?.postMessage({ type: 'process', data: fftInput });
+      // Note: postMessage will copy the buffer, so reusing is safe
+      this.fftWorker?.postMessage({ type: 'process', data: this.fftInputBuffer });
 
       // Multi-resolution FFT (needs 8192 samples for sub-bass)
-      const multiResInput = new Float32Array(FFT_SIZE_MAX);
+      // PERFORMANCE: Use pre-allocated buffer
       const multiResStartPos = (this.bufferWritePos - FFT_SIZE_MAX + this.audioBuffer.length) % this.audioBuffer.length;
 
       for (let i = 0; i < FFT_SIZE_MAX; i++) {
-        multiResInput[i] = this.audioBuffer[(multiResStartPos + i) % this.audioBuffer.length];
+        this.multiResInputBuffer[i] = this.audioBuffer[(multiResStartPos + i) % this.audioBuffer.length];
       }
 
-      this.multiResWorker?.postMessage({ type: 'process', data: multiResInput });
+      this.multiResWorker?.postMessage({ type: 'process', data: this.multiResInputBuffer });
 
       this.samplesSinceLastFFT -= FFT_HOP_SIZE;
     }
