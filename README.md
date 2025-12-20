@@ -219,7 +219,7 @@ AUDIO_PRIME/
 
 ## Release Status
 
-### Commercial Release Preparation
+### Current Release: v1.1.0 (Linux)
 
 | Phase | Status | Description |
 |-------|--------|-------------|
@@ -229,8 +229,24 @@ AUDIO_PRIME/
 | Phase 4 | ✅ Complete | Performance & Stability |
 | Phase 5 | ✅ Complete | Testing & Documentation |
 | Phase 6 | ✅ Complete | Distribution & Signing |
-| Phase 7 | ⏳ Pending | Pre-Release Testing |
-| Phase 8 | ⏳ Pending | Delivery |
+| Phase 7 | ✅ Complete | Pre-Release Testing (Linux) |
+| Phase 8 | ✅ Complete | Delivery (Linux) |
+
+### Platform Support
+| Platform | Status | Version |
+|----------|--------|---------|
+| Linux | ✅ Released | v1.1.0 |
+| macOS | 🚧 In Development | v1.2.0 |
+| Windows | 📋 Planned | v1.3.0 |
+
+### Build Formats
+| Platform | Format | Status |
+|----------|--------|--------|
+| Linux | AppImage | ✅ Available |
+| Linux | .deb | ✅ Available |
+| Linux | .rpm | ✅ Available |
+| macOS | .dmg (x64 + arm64) | 🚧 Coming v1.2.0 |
+| Windows | NSIS installer | 📋 Coming v1.3.0 |
 
 ### Security Hardening
 - ✅ Electron 35 with hardened security flags
@@ -240,15 +256,6 @@ AUDIO_PRIME/
 - ✅ Environment-based credential management
 - ✅ ESLint security plugins
 - ✅ Automated vulnerability scanning (CI/CD)
-
-### Build Targets
-| Platform | Format | Status |
-|----------|--------|--------|
-| Linux | AppImage | ✅ |
-| Linux | .deb | ✅ |
-| Linux | .rpm | ✅ |
-| macOS | .dmg (x64 + arm64) | ✅ Configured |
-| Windows | NSIS installer | ✅ Configured |
 
 ---
 
