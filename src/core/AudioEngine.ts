@@ -47,6 +47,14 @@ export interface LoudnessData {
   truePeak: number;
 }
 
+export interface StereoAnalysisData {
+  correlation: number;      // -1 to +1: phase coherence
+  stereoWidth: number;      // 0 to 1: stereo spread
+  balance: number;          // -1 to +1: L/R balance
+  midLevel: number;         // dB: mid (mono) level
+  sideLevel: number;        // dB: side (stereo) level
+}
+
 // Constants
 const SAMPLE_RATE = 48000;
 const FFT_SIZE = 4096;  // Standard FFT size
@@ -61,6 +69,8 @@ class AudioEngineClass {
   public waveform: Writable<Float32Array>;
   public levels: Writable<{ left: number; right: number; peak: number }>;
   public loudness: Writable<LoudnessData>;
+  public stereoAnalysis: Writable<StereoAnalysisData>;
+  public stereoSamples: Writable<Float32Array>;  // Interleaved L/R samples for goniometer
   public beatInfo: Writable<BeatInfo>;
   public voiceInfo: Writable<VoiceInfo>;
 
@@ -102,6 +112,14 @@ class AudioEngineClass {
       range: 0,
       truePeak: -Infinity,
     });
+    this.stereoAnalysis = writable<StereoAnalysisData>({
+      correlation: 0,
+      stereoWidth: 0,
+      balance: 0,
+      midLevel: -Infinity,
+      sideLevel: -Infinity,
+    });
+    this.stereoSamples = writable(new Float32Array(2048)); // 1024 stereo pairs
     this.beatInfo = writable<BeatInfo>({
       bpm: 0,
       confidence: 0,
@@ -117,9 +135,13 @@ class AudioEngineClass {
       probability: 0,
       pitch: 0,
       formants: [],
-      classification: 'none',
+      classification: 'instrumental',
       voiceRatio: 0,
       centroid: 0,
+      vibratoRate: 0,
+      vibratoDepth: 0,
+      pitchStability: 0.5,
+      hasVibrato: false,
     });
 
     // Pre-allocate audio buffer (large enough for max FFT size)
@@ -298,6 +320,29 @@ class AudioEngineClass {
                       Math.random() * 0.05;
       }
       this.waveform.set(waveform);
+
+      // Generate synthetic stereo analysis data
+      const demoCorrelation = 0.7 + Math.sin(time * 0.5) * 0.25 + Math.random() * 0.05;
+      const demoWidth = 0.3 + Math.sin(time * 0.3) * 0.2 + Math.random() * 0.05;
+      const demoBalance = Math.sin(time * 0.2) * 0.15;
+      this.stereoAnalysis.set({
+        correlation: Math.max(-1, Math.min(1, demoCorrelation)),
+        stereoWidth: Math.max(0, Math.min(1, demoWidth)),
+        balance: Math.max(-1, Math.min(1, demoBalance)),
+        midLevel: -18 + Math.sin(time * 2) * 5,
+        sideLevel: -28 + Math.sin(time * 1.5) * 5,
+      });
+
+      // Generate synthetic stereo samples for goniometer
+      const stereoSamples = new Float32Array(2048);
+      for (let i = 0; i < stereoSamples.length; i += 2) {
+        const t = time * 1000 + i / 10;
+        const mono = Math.sin(t * 0.1) * 0.3 + Math.sin(t * 0.23) * 0.15;
+        const side = Math.sin(t * 0.15 + 1.2) * demoWidth * 0.3;
+        stereoSamples[i] = mono + side + (Math.random() - 0.5) * 0.05;     // L
+        stereoSamples[i + 1] = mono - side + (Math.random() - 0.5) * 0.05; // R
+      }
+      this.stereoSamples.set(stereoSamples);
 
       this.demoAnimationFrame = requestAnimationFrame(generateDemoData);
     };
@@ -688,6 +733,61 @@ class AudioEngineClass {
     const dbPeak = peak > 1e-10 ? 20 * Math.log10(peak) : -100;
 
     this.levels.set({ left: dbL, right: dbR, peak: dbPeak });
+
+    // Calculate stereo analysis (correlation, width, balance, M/S levels)
+    let sumLR = 0;      // Sum of L*R products for correlation
+    let sumLsq = 0;     // Sum of L^2
+    let sumRsq = 0;     // Sum of R^2
+    let sumMid = 0;     // Sum of (L+R)^2 for mid level
+    let sumSide = 0;    // Sum of (L-R)^2 for side level
+
+    const numStereoSamples = samples.length / 2;
+    for (let i = 0; i < samples.length; i += 2) {
+      const l = samples[i] || 0;
+      const r = samples[i + 1] || 0;
+
+      sumLR += l * r;
+      sumLsq += l * l;
+      sumRsq += r * r;
+
+      // M/S encoding: Mid = (L+R)/2, Side = (L-R)/2
+      const mid = (l + r) * 0.5;
+      const side = (l - r) * 0.5;
+      sumMid += mid * mid;
+      sumSide += side * side;
+    }
+
+    // Pearson correlation coefficient: r = Σ(L*R) / sqrt(Σ(L²) * Σ(R²))
+    const denom = Math.sqrt(sumLsq * sumRsq);
+    const correlation = denom > 1e-10 ? sumLR / denom : 0;
+
+    // Stereo width: 0 = mono, 1 = wide stereo
+    // Based on side/mid ratio (clamped)
+    const rmsMid = Math.sqrt(sumMid / numStereoSamples);
+    const rmsSide = Math.sqrt(sumSide / numStereoSamples);
+    const stereoWidth = rmsMid > 1e-10 ? Math.min(1, rmsSide / rmsMid) : 0;
+
+    // Balance: -1 = left, 0 = center, +1 = right
+    const balance = (rmsL + rmsR) > 1e-10 ? (rmsR - rmsL) / (rmsL + rmsR) : 0;
+
+    // M/S levels in dB
+    const midLevel = rmsMid > 1e-10 ? 20 * Math.log10(rmsMid) : -100;
+    const sideLevel = rmsSide > 1e-10 ? 20 * Math.log10(rmsSide) : -100;
+
+    this.stereoAnalysis.set({
+      correlation,
+      stereoWidth,
+      balance,
+      midLevel,
+      sideLevel,
+    });
+
+    // Store stereo samples for goniometer display (last 2048 samples = 1024 pairs)
+    if (samples.length >= 2048) {
+      this.stereoSamples.set(samples.slice(samples.length - 2048));
+    } else if (samples.length > 0) {
+      this.stereoSamples.set(samples.slice());
+    }
 
     // Process LUFS metering (expects interleaved stereo)
     const lufsResult = this.lufsMeter.process(samples);

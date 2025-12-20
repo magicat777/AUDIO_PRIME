@@ -29,7 +29,7 @@
     dispatch('close');
   }
 
-  function toggleModule(module: 'spectrum' | 'vuMeters' | 'bassDetail' | 'waterfall' | 'lufsMetering' | 'bpmTempo' | 'voiceDetection' | 'debug' | 'spotify') {
+  function toggleModule(module: 'spectrum' | 'vuMeters' | 'bassDetail' | 'waterfall' | 'lufsMetering' | 'bpmTempo' | 'voiceDetection' | 'stereoCorrelation' | 'goniometer' | 'oscilloscope' | 'debug' | 'spotify') {
     moduleVisibility.toggle(module);
   }
 </script>
@@ -113,6 +113,21 @@
         <label class="module-toggle">
           <input type="checkbox" checked={$moduleVisibility.voiceDetection} on:change={() => toggleModule('voiceDetection')} />
           <span>Voice Detection</span>
+        </label>
+        <label class="module-toggle">
+          <input type="checkbox" checked={$moduleVisibility.stereoCorrelation} on:change={() => toggleModule('stereoCorrelation')} />
+          <span>Stereo Correlation</span>
+          <span class="badge stereo">NEW</span>
+        </label>
+        <label class="module-toggle">
+          <input type="checkbox" checked={$moduleVisibility.goniometer} on:change={() => toggleModule('goniometer')} />
+          <span>Goniometer</span>
+          <span class="badge stereo">NEW</span>
+        </label>
+        <label class="module-toggle">
+          <input type="checkbox" checked={$moduleVisibility.oscilloscope} on:change={() => toggleModule('oscilloscope')} />
+          <span>Oscilloscope</span>
+          <span class="badge stereo">NEW</span>
         </label>
         <label class="module-toggle">
           <input type="checkbox" checked={$moduleVisibility.debug} on:change={() => toggleModule('debug')} />
@@ -305,6 +320,11 @@
   .badge.spotify {
     background: rgba(29, 185, 84, 0.2);
     color: #1DB954;
+  }
+
+  .badge.stereo {
+    background: rgba(74, 158, 255, 0.2);
+    color: var(--accent-color);
   }
 
   .shortcuts {

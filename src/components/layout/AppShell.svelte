@@ -9,6 +9,9 @@
   import LUFSMeterPanel from '../meters/LUFSMeterPanel.svelte';
   import BPMPanel from '../meters/BPMPanel.svelte';
   import VoicePanel from '../meters/VoicePanel.svelte';
+  import StereoCorrelationPanel from '../meters/StereoCorrelationPanel.svelte';
+  import GoniometerPanel from '../meters/GoniometerPanel.svelte';
+  import OscilloscopePanel from '../meters/OscilloscopePanel.svelte';
   import DebugPanel from '../panels/DebugPanel.svelte';
   import SpotifyPanel from '../spotify/SpotifyPanel.svelte';
   import { audioEngine } from '../../core/AudioEngine';
@@ -157,6 +160,20 @@
           <SpotifyPanel />
         {/if}
       </div>
+
+      {#if $moduleVisibility.stereoCorrelation || $moduleVisibility.goniometer || $moduleVisibility.oscilloscope}
+        <div class="stereo-analysis-container">
+          {#if $moduleVisibility.stereoCorrelation}
+            <StereoCorrelationPanel />
+          {/if}
+          {#if $moduleVisibility.goniometer}
+            <GoniometerPanel />
+          {/if}
+          {#if $moduleVisibility.oscilloscope}
+            <OscilloscopePanel />
+          {/if}
+        </div>
+      {/if}
     </div>
   </div>
 </div>
@@ -219,6 +236,12 @@
     height: 140px;
     display: flex;
     gap: var(--panel-padding);
+  }
+
+  .stereo-analysis-container {
+    display: flex;
+    gap: var(--panel-padding);
+    align-items: stretch;
   }
 
   @media (max-width: 1400px) {

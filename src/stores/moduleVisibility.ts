@@ -11,6 +11,9 @@ export interface ModuleVisibility {
   lufsMetering: boolean;
   bpmTempo: boolean;
   voiceDetection: boolean;
+  stereoCorrelation: boolean;
+  goniometer: boolean;
+  oscilloscope: boolean;
   debug: boolean;
   spotify: boolean;
 }
@@ -23,6 +26,9 @@ const defaultVisibility: ModuleVisibility = {
   lufsMetering: true,  // Toggleable
   bpmTempo: true,      // Toggleable
   voiceDetection: true, // Toggleable
+  stereoCorrelation: true, // Stereo analysis
+  goniometer: true,    // Stereo field display
+  oscilloscope: true,  // Waveform display
   debug: true,         // Toggleable
   spotify: true,       // Spotify integration
 };

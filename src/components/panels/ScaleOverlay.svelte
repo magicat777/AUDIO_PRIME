@@ -55,8 +55,8 @@
 
     for (let i = 0; i < FREQ_VALUES.length; i++) {
       const freq = FREQ_VALUES[i];
-      // Logarithmic position (using same mapping as spectrum renderer)
-      const normalizedPos = Math.sqrt(Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ));
+      // Logarithmic position (matching spectrum data mapping: 20Hz-20kHz over 512 bars)
+      const normalizedPos = Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ);
       const x = margin.left + normalizedPos * graphWidth;
 
       // Grid line

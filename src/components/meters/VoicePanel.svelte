@@ -11,9 +11,13 @@
     probability: 0,
     pitch: 0,
     formants: [],
-    classification: 'none',
+    classification: 'instrumental',
     voiceRatio: 0,
     centroid: 0,
+    vibratoRate: 0,
+    vibratoDepth: 0,
+    pitchStability: 0.5,
+    hasVibrato: false,
   };
 
   // Animation frame tracking
@@ -28,6 +32,10 @@
   $: displayFormants = voiceInfo.formants;
   $: displayVoiceRatio = voiceInfo.voiceRatio + frameCount * 0;
   $: displayCentroid = voiceInfo.centroid + frameCount * 0;
+  $: displayVibratoRate = voiceInfo.vibratoRate + frameCount * 0;
+  $: displayVibratoDepth = voiceInfo.vibratoDepth + frameCount * 0;
+  $: displayPitchStability = voiceInfo.pitchStability + frameCount * 0;
+  $: displayHasVibrato = voiceInfo.hasVibrato;
 
   // Update loop using requestAnimationFrame
   function updateVoiceInfo() {
@@ -50,6 +58,7 @@
       case 'singing': return 'SINGING';
       case 'speech': return 'SPEECH';
       case 'voice': return 'VOICE';
+      case 'instrumental': return 'INSTR';
       default: return '---';
     }
   }
@@ -60,6 +69,7 @@
       case 'singing': return 'var(--accent-color)';
       case 'speech': return 'var(--meter-green)';
       case 'voice': return 'var(--meter-yellow)';
+      case 'instrumental': return 'var(--text-muted)';
       default: return 'var(--text-muted)';
     }
   }
@@ -91,18 +101,10 @@
           {getClassificationLabel(displayClassification)}
         </span>
       </div>
-      <!-- Confidence meter below classification -->
-      <div class="confidence-section">
-        <div class="confidence-header">
-          <span class="conf-label">CONFIDENCE</span>
-          <span class="conf-value mono">{displayConfidence}%</span>
-        </div>
-        <div class="meter-bar">
-          <div
-            class="meter-fill"
-            style="width: {displayConfidence}%; background: {getConfidenceColor(displayConfidence)}"
-          ></div>
-        </div>
+      <!-- Confidence label and value -->
+      <div class="confidence-header">
+        <span class="conf-label">CONFIDENCE</span>
+        <span class="conf-value mono">{displayConfidence}%</span>
       </div>
     </div>
 
@@ -114,29 +116,40 @@
           <span class="stat-value mono">{displayPitch > 0 ? `${displayPitch} Hz` : '---'}</span>
         </div>
         <div class="stat-item">
+          <span class="stat-label">Vibrato</span>
+          <span class="stat-value mono" class:vibrato-active={displayHasVibrato}>
+            {displayHasVibrato ? `${displayVibratoRate} Hz` : '---'}
+          </span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">Stability</span>
+          <span class="stat-value mono">{Math.round(displayPitchStability * 100)}%</span>
+        </div>
+        <div class="stat-item">
           <span class="stat-label">Centroid</span>
           <span class="stat-value mono">{displayCentroid > 0 ? `${displayCentroid} Hz` : '---'}</span>
         </div>
-        <div class="stat-item">
-          <span class="stat-label">Voice Ratio</span>
-          <span class="stat-value mono">{displayVoiceRatio > 0 ? `${Math.round(displayVoiceRatio * 100)}%` : '---'}</span>
-        </div>
       </div>
 
-      <!-- Formants row -->
+      <!-- Formants row - always show F1-F4 labels -->
       <div class="formants-section">
         <span class="formants-label">FORMANTS</span>
         <div class="formants-list">
-          {#if displayFormants.length > 0}
-            {#each displayFormants as f, i}
-              <span class="formant-value mono">F{i + 1}: {f}Hz</span>
-            {/each}
-          {:else}
-            <span class="formant-value mono">---</span>
-          {/if}
+          <span class="formant-value mono">F1: {displayFormants[0] ? displayFormants[0] + 'Hz' : '---'}</span>
+          <span class="formant-value mono">F2: {displayFormants[1] ? displayFormants[1] + 'Hz' : '---'}</span>
+          <span class="formant-value mono">F3: {displayFormants[2] ? displayFormants[2] + 'Hz' : '---'}</span>
+          <span class="formant-value mono">F4: {displayFormants[3] ? displayFormants[3] + 'Hz' : '---'}</span>
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- Full-width confidence meter bar only -->
+  <div class="meter-bar full-width">
+    <div
+      class="meter-fill"
+      style="width: {displayConfidence}%; background: {getConfidenceColor(displayConfidence)}"
+    ></div>
   </div>
 </div>
 
@@ -220,12 +233,6 @@
     white-space: nowrap;
   }
 
-  .confidence-section {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
   .confidence-header {
     display: flex;
     justify-content: space-between;
@@ -248,6 +255,11 @@
     background: var(--bg-secondary);
     border-radius: 3px;
     overflow: hidden;
+  }
+
+  .meter-bar.full-width {
+    height: 8px;
+    border-radius: 4px;
   }
 
   .meter-fill {
@@ -314,5 +326,10 @@
 
   .mono {
     font-family: var(--font-mono);
+  }
+
+  .vibrato-active {
+    color: var(--accent-color);
+    font-weight: 600;
   }
 </style>
