@@ -37,6 +37,7 @@
   "license": "MIT",
   "dependencies": {
     "comlink": "^4.4.1",
+    "dotenv": "^17.2.3",
     "fft.js": "^4.0.4",
     "interactjs": "^1.10.27"
   },

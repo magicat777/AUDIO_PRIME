@@ -14,6 +14,12 @@ import { createHash, randomBytes } from 'crypto';
 import { URL } from 'url';
 import * as os from 'os';
 import * as fs from 'fs';
+import { config as dotenvConfig } from 'dotenv';
+
+// Load environment variables from .env file (for development)
+dotenvConfig({ path: join(__dirname, '../.env') });
+// Also try loading from app root for production builds
+dotenvConfig({ path: join(app.getAppPath(), '.env') });
 
 const execAsync = promisify(exec);
 
@@ -37,16 +43,29 @@ let lastTrackId: string | null = null;
 // CPU usage tracking
 let previousCpuInfo: { idle: number; total: number } | null = null;
 
-// Spotify configuration
+// Spotify configuration - credentials loaded from environment variables
+// Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in .env file
 const SPOTIFY_CONFIG = {
-  clientId: 'ff000ff5b98549d7b50c7fe286ad265d',
-  clientSecret: '2cfece19041b40c2b69ae28cfdb3beda',
-  redirectUri: 'http://127.0.0.1:8888/callback',
+  clientId: process.env.SPOTIFY_CLIENT_ID || '',
+  clientSecret: process.env.SPOTIFY_CLIENT_SECRET || '',
+  redirectUri: process.env.SPOTIFY_REDIRECT_URI || 'http://127.0.0.1:8888/callback',
   scopes: ['user-read-currently-playing', 'user-read-playback-state', 'user-modify-playback-state'],
   authUrl: 'https://accounts.spotify.com/authorize',
   tokenUrl: 'https://accounts.spotify.com/api/token',
   apiBaseUrl: 'https://api.spotify.com/v1',
 };
+
+// Validate Spotify credentials on startup
+function validateSpotifyConfig(): boolean {
+  if (!SPOTIFY_CONFIG.clientId || !SPOTIFY_CONFIG.clientSecret) {
+    console.warn('Spotify credentials not configured. Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in .env file.');
+    console.warn('Spotify integration will be disabled.');
+    return false;
+  }
+  return true;
+}
+
+const spotifyEnabled = validateSpotifyConfig();
 
 // IPC Channels
 const IPC = {
@@ -1063,6 +1082,14 @@ async function openExternalUrl(url: string): Promise<void> {
 
 // Spotify IPC Handlers
 ipcMain.handle(IPC.SPOTIFY_CONNECT, async () => {
+  // Check if Spotify credentials are configured
+  if (!spotifyEnabled) {
+    return {
+      success: false,
+      error: 'Spotify credentials not configured. Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in .env file.'
+    };
+  }
+
   try {
     // Generate PKCE codes
     codeVerifier = generateCodeVerifier();
