@@ -29,7 +29,7 @@
     dispatch('close');
   }
 
-  function toggleModule(module: 'spectrum' | 'vuMeters' | 'bassDetail' | 'waterfall' | 'lufsMetering' | 'bpmTempo' | 'voiceDetection' | 'debug') {
+  function toggleModule(module: 'spectrum' | 'vuMeters' | 'bassDetail' | 'waterfall' | 'lufsMetering' | 'bpmTempo' | 'voiceDetection' | 'debug' | 'spotify') {
     moduleVisibility.toggle(module);
   }
 </script>
@@ -117,6 +117,11 @@
         <label class="module-toggle">
           <input type="checkbox" checked={$moduleVisibility.debug} on:change={() => toggleModule('debug')} />
           <span>Debug Panel</span>
+        </label>
+        <label class="module-toggle">
+          <input type="checkbox" checked={$moduleVisibility.spotify} on:change={() => toggleModule('spotify')} />
+          <span>Spotify</span>
+          <span class="badge spotify">API</span>
         </label>
       </div>
     </section>
@@ -295,6 +300,11 @@
     border-radius: 2px;
     color: var(--text-muted);
     margin-left: auto;
+  }
+
+  .badge.spotify {
+    background: rgba(29, 185, 84, 0.2);
+    color: #1DB954;
   }
 
   .shortcuts {

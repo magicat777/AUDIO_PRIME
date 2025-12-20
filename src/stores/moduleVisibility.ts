@@ -12,6 +12,7 @@ export interface ModuleVisibility {
   bpmTempo: boolean;
   voiceDetection: boolean;
   debug: boolean;
+  spotify: boolean;
 }
 
 const defaultVisibility: ModuleVisibility = {
@@ -23,6 +24,7 @@ const defaultVisibility: ModuleVisibility = {
   bpmTempo: true,      // Toggleable
   voiceDetection: true, // Toggleable
   debug: true,         // Toggleable
+  spotify: true,       // Spotify integration
 };
 
 // Load from localStorage if available

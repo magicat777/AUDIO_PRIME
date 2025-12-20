@@ -10,6 +10,7 @@
   import BPMPanel from '../meters/BPMPanel.svelte';
   import VoicePanel from '../meters/VoicePanel.svelte';
   import DebugPanel from '../panels/DebugPanel.svelte';
+  import SpotifyPanel from '../spotify/SpotifyPanel.svelte';
   import { audioEngine } from '../../core/AudioEngine';
   import { moduleVisibility } from '../../stores/moduleVisibility';
 
@@ -152,9 +153,9 @@
         {#if $moduleVisibility.voiceDetection}
           <VoicePanel />
         {/if}
-        <div class="placeholder-panel">
-          <span class="placeholder-label">RESERVED</span>
-        </div>
+        {#if $moduleVisibility.spotify}
+          <SpotifyPanel />
+        {/if}
       </div>
     </div>
   </div>
@@ -218,23 +219,6 @@
     height: 140px;
     display: flex;
     gap: var(--panel-padding);
-  }
-
-  .placeholder-panel {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 120px;
-    background: var(--bg-panel);
-    border-radius: var(--border-radius);
-    border: 1px dashed var(--border-color);
-    opacity: 0.5;
-  }
-
-  .placeholder-label {
-    font-size: 0.65rem;
-    color: var(--text-muted);
-    letter-spacing: 0.1em;
   }
 
   @media (max-width: 1400px) {

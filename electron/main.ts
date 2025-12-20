@@ -4,11 +4,14 @@ if (process.env.APPIMAGE || process.platform === 'linux') {
   process.argv.push('--no-sandbox');
 }
 
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, safeStorage } from 'electron';
 import { join } from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { createServer, Server, IncomingMessage, ServerResponse } from 'http';
+import { createHash, randomBytes } from 'crypto';
+import { URL } from 'url';
 
 const execAsync = promisify(exec);
 
@@ -18,6 +21,27 @@ let audioProcess: ChildProcess | null = null;
 // Window reference
 let mainWindow: BrowserWindow | null = null;
 
+// Spotify OAuth state
+let oauthServer: Server | null = null;
+let codeVerifier: string | null = null;
+let oauthState: string | null = null;
+let spotifyTokens: {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+} | null = null;
+
+// Spotify configuration
+const SPOTIFY_CONFIG = {
+  clientId: 'ff000ff5b98549d7b50c7fe286ad265d',
+  clientSecret: '2cfece19041b40c2b69ae28cfdb3beda',
+  redirectUri: 'http://127.0.0.1:8888/callback',
+  scopes: ['user-read-currently-playing', 'user-read-playback-state', 'user-modify-playback-state'],
+  authUrl: 'https://accounts.spotify.com/authorize',
+  tokenUrl: 'https://accounts.spotify.com/api/token',
+  apiBaseUrl: 'https://api.spotify.com/v1',
+};
+
 // IPC Channels
 const IPC = {
   AUDIO_DATA: 'audio:data',
@@ -26,6 +50,21 @@ const IPC = {
   AUDIO_STOP: 'audio:stop',
   AUDIO_SELECT_DEVICE: 'audio:select-device',
   WINDOW_FULLSCREEN: 'window:fullscreen',
+  // Spotify channels
+  SPOTIFY_CONNECT: 'spotify:connect',
+  SPOTIFY_DISCONNECT: 'spotify:disconnect',
+  SPOTIFY_STATUS: 'spotify:status',
+  SPOTIFY_NOW_PLAYING: 'spotify:now-playing',
+  SPOTIFY_AUDIO_FEATURES: 'spotify:audio-features',
+  SPOTIFY_AUTH_UPDATE: 'spotify:auth-update',
+  // Spotify playback control
+  SPOTIFY_PLAY: 'spotify:play',
+  SPOTIFY_PAUSE: 'spotify:pause',
+  SPOTIFY_NEXT: 'spotify:next',
+  SPOTIFY_PREVIOUS: 'spotify:previous',
+  SPOTIFY_SEEK: 'spotify:seek',
+  SPOTIFY_SHUFFLE: 'spotify:shuffle',
+  SPOTIFY_REPEAT: 'spotify:repeat',
 };
 
 interface AudioDevice {
@@ -191,8 +230,655 @@ ipcMain.handle(IPC.WINDOW_FULLSCREEN, () => {
   return false;
 });
 
+// ============================================
+// Spotify OAuth and API Functions
+// ============================================
+
+/**
+ * Generate PKCE code verifier
+ */
+function generateCodeVerifier(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+/**
+ * Generate PKCE code challenge from verifier
+ */
+function generateCodeChallenge(verifier: string): string {
+  return createHash('sha256').update(verifier).digest('base64url');
+}
+
+/**
+ * Load stored tokens from safeStorage
+ */
+function loadStoredTokens(): void {
+  try {
+    const stored = app.getPath('userData');
+    const fs = require('fs');
+    const tokenPath = join(stored, 'spotify-tokens.enc');
+
+    if (fs.existsSync(tokenPath) && safeStorage.isEncryptionAvailable()) {
+      const encrypted = fs.readFileSync(tokenPath);
+      const decrypted = safeStorage.decryptString(encrypted);
+      spotifyTokens = JSON.parse(decrypted);
+      console.log('Loaded stored Spotify tokens');
+    }
+  } catch (error) {
+    console.error('Error loading stored tokens:', error);
+    spotifyTokens = null;
+  }
+}
+
+/**
+ * Save tokens to safeStorage
+ */
+function saveTokens(): void {
+  try {
+    if (!spotifyTokens) return;
+
+    const stored = app.getPath('userData');
+    const fs = require('fs');
+    const tokenPath = join(stored, 'spotify-tokens.enc');
+
+    if (safeStorage.isEncryptionAvailable()) {
+      const encrypted = safeStorage.encryptString(JSON.stringify(spotifyTokens));
+      fs.writeFileSync(tokenPath, encrypted);
+      console.log('Saved Spotify tokens');
+    }
+  } catch (error) {
+    console.error('Error saving tokens:', error);
+  }
+}
+
+/**
+ * Clear stored tokens
+ */
+function clearTokens(): void {
+  try {
+    spotifyTokens = null;
+    const stored = app.getPath('userData');
+    const fs = require('fs');
+    const tokenPath = join(stored, 'spotify-tokens.enc');
+
+    if (fs.existsSync(tokenPath)) {
+      fs.unlinkSync(tokenPath);
+    }
+    console.log('Cleared Spotify tokens');
+  } catch (error) {
+    console.error('Error clearing tokens:', error);
+  }
+}
+
+/**
+ * Exchange authorization code for tokens
+ */
+async function exchangeCodeForTokens(code: string): Promise<boolean> {
+  try {
+    const params = new URLSearchParams({
+      client_id: SPOTIFY_CONFIG.clientId,
+      grant_type: 'authorization_code',
+      code: code,
+      redirect_uri: SPOTIFY_CONFIG.redirectUri,
+      code_verifier: codeVerifier!,
+    });
+
+    const response = await fetch(SPOTIFY_CONFIG.tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': 'Basic ' + Buffer.from(
+          `${SPOTIFY_CONFIG.clientId}:${SPOTIFY_CONFIG.clientSecret}`
+        ).toString('base64'),
+      },
+      body: params.toString(),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error('Token exchange failed:', error);
+      return false;
+    }
+
+    const data = await response.json();
+    spotifyTokens = {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      expiresAt: Date.now() + (data.expires_in * 1000),
+    };
+
+    saveTokens();
+
+    // Notify renderer of auth update
+    mainWindow?.webContents.send(IPC.SPOTIFY_AUTH_UPDATE, { connected: true });
+
+    return true;
+  } catch (error) {
+    console.error('Error exchanging code for tokens:', error);
+    return false;
+  }
+}
+
+/**
+ * Refresh access token
+ */
+async function refreshAccessToken(): Promise<boolean> {
+  if (!spotifyTokens?.refreshToken) return false;
+
+  try {
+    const params = new URLSearchParams({
+      client_id: SPOTIFY_CONFIG.clientId,
+      grant_type: 'refresh_token',
+      refresh_token: spotifyTokens.refreshToken,
+    });
+
+    const response = await fetch(SPOTIFY_CONFIG.tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': 'Basic ' + Buffer.from(
+          `${SPOTIFY_CONFIG.clientId}:${SPOTIFY_CONFIG.clientSecret}`
+        ).toString('base64'),
+      },
+      body: params.toString(),
+    });
+
+    if (!response.ok) {
+      console.error('Token refresh failed');
+      return false;
+    }
+
+    const data = await response.json();
+    spotifyTokens = {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token || spotifyTokens.refreshToken,
+      expiresAt: Date.now() + (data.expires_in * 1000),
+    };
+
+    saveTokens();
+    return true;
+  } catch (error) {
+    console.error('Error refreshing token:', error);
+    return false;
+  }
+}
+
+/**
+ * Get valid access token (refresh if needed)
+ */
+async function getValidAccessToken(): Promise<string | null> {
+  if (!spotifyTokens) return null;
+
+  // Refresh if expires in less than 5 minutes
+  if (Date.now() > spotifyTokens.expiresAt - 300000) {
+    const refreshed = await refreshAccessToken();
+    if (!refreshed) return null;
+  }
+
+  return spotifyTokens.accessToken;
+}
+
+/**
+ * Start OAuth callback server
+ */
+function startOAuthServer(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (oauthServer) {
+      oauthServer.close();
+    }
+
+    oauthServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+      const url = new URL(req.url || '/', `http://localhost:8888`);
+
+      if (url.pathname === '/callback') {
+        const code = url.searchParams.get('code');
+        const state = url.searchParams.get('state');
+        const error = url.searchParams.get('error');
+
+        if (error) {
+          res.writeHead(400, { 'Content-Type': 'text/html' });
+          res.end(`<html><body><h1>Authentication Failed</h1><p>${error}</p><script>window.close()</script></body></html>`);
+          return;
+        }
+
+        if (state !== oauthState) {
+          res.writeHead(400, { 'Content-Type': 'text/html' });
+          res.end('<html><body><h1>Invalid State</h1><script>window.close()</script></body></html>');
+          return;
+        }
+
+        if (code) {
+          const success = await exchangeCodeForTokens(code);
+          if (success) {
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end(`
+              <html>
+                <body style="background:#0a0a0f;color:#fff;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;">
+                  <div style="text-align:center;">
+                    <h1 style="color:#1DB954;">✓ Connected to Spotify!</h1>
+                    <p>You can close this window and return to AUDIO_PRIME.</p>
+                    <script>setTimeout(() => window.close(), 2000)</script>
+                  </div>
+                </body>
+              </html>
+            `);
+          } else {
+            res.writeHead(500, { 'Content-Type': 'text/html' });
+            res.end('<html><body><h1>Token Exchange Failed</h1><script>window.close()</script></body></html>');
+          }
+        }
+
+        // Close server after handling callback
+        setTimeout(() => {
+          oauthServer?.close();
+          oauthServer = null;
+        }, 3000);
+      }
+    });
+
+    oauthServer.listen(8888, () => {
+      console.log('OAuth callback server listening on port 8888');
+      resolve();
+    });
+
+    oauthServer.on('error', (err) => {
+      console.error('OAuth server error:', err);
+      reject(err);
+    });
+  });
+}
+
+/**
+ * Fetch currently playing track from Spotify
+ */
+async function fetchNowPlaying(): Promise<unknown> {
+  const token = await getValidAccessToken();
+  if (!token) return { error: 'Not authenticated' };
+
+  try {
+    const response = await fetch(`${SPOTIFY_CONFIG.apiBaseUrl}/me/player/currently-playing`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+
+    if (response.status === 204) {
+      return { playing: false, track: null };
+    }
+
+    if (!response.ok) {
+      return { error: 'API request failed' };
+    }
+
+    const data = await response.json();
+
+    if (!data.item) {
+      return { playing: false, track: null };
+    }
+
+    // Get album art - prefer medium size (300px), fallback to any available
+    const images = data.item.album?.images || [];
+    let albumArt = null;
+    let albumArtLarge = null;
+
+    if (images.length > 0) {
+      // Sort by size and pick appropriately
+      const sorted = [...images].sort((a: { height: number }, b: { height: number }) => (b.height || 0) - (a.height || 0));
+      albumArtLarge = sorted[0]?.url || null;
+      // For thumbnail, prefer ~300px or smallest available
+      albumArt = sorted.find((img: { height: number }) => img.height && img.height <= 300)?.url || sorted[sorted.length - 1]?.url || albumArtLarge;
+    }
+
+    console.log('Now playing:', data.item.name, 'Album art:', albumArt);
+
+    return {
+      playing: data.is_playing,
+      track: {
+        id: data.item.id,
+        name: data.item.name,
+        artist: data.item.artists.map((a: { name: string }) => a.name).join(', '),
+        artists: data.item.artists.map((a: { name: string }) => a.name),
+        album: data.item.album.name,
+        albumArt: albumArt,
+        albumArtLarge: albumArtLarge,
+        durationMs: data.item.duration_ms,
+        progressMs: data.progress_ms,
+        uri: data.item.uri,
+      },
+    };
+  } catch (error) {
+    console.error('Error fetching now playing:', error);
+    return { error: 'Request failed' };
+  }
+}
+
+/**
+ * Fetch audio features for a track
+ */
+async function fetchAudioFeatures(trackId: string): Promise<unknown> {
+  const token = await getValidAccessToken();
+  if (!token) return { error: 'Not authenticated' };
+
+  try {
+    console.log('Fetching audio features for track:', trackId);
+    const response = await fetch(`${SPOTIFY_CONFIG.apiBaseUrl}/audio-features/${trackId}`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Audio features API error:', response.status, errorText);
+      // 403 = Spotify deprecated audio-features for most apps in Nov 2024
+      if (response.status === 403) {
+        return { error: 'Audio features unavailable (API restricted)', unavailable: true };
+      }
+      return { error: `API request failed: ${response.status}` };
+    }
+
+    const data = await response.json();
+    console.log('Audio features received:', data);
+
+    return {
+      tempo: Math.round(data.tempo || 0),
+      key: data.key ?? -1,
+      mode: data.mode ?? 0,
+      energy: data.energy || 0,
+      danceability: data.danceability || 0,
+      valence: data.valence || 0,
+      acousticness: data.acousticness || 0,
+      instrumentalness: data.instrumentalness || 0,
+      liveness: data.liveness || 0,
+      speechiness: data.speechiness || 0,
+      loudness: data.loudness || -60,
+      timeSignature: data.time_signature || 4,
+    };
+  } catch (error) {
+    console.error('Error fetching audio features:', error);
+    return { error: 'Request failed' };
+  }
+}
+
+/**
+ * Playback control - Play/Resume
+ */
+async function playbackPlay(): Promise<{ success: boolean; error?: string }> {
+  const token = await getValidAccessToken();
+  if (!token) return { success: false, error: 'Not authenticated' };
+
+  try {
+    const response = await fetch(`${SPOTIFY_CONFIG.apiBaseUrl}/me/player/play`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+
+    if (response.status === 204 || response.ok) {
+      return { success: true };
+    }
+
+    const errorText = await response.text();
+    return { success: false, error: `API error: ${response.status}` };
+  } catch (error) {
+    console.error('Error playing:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+/**
+ * Playback control - Pause
+ */
+async function playbackPause(): Promise<{ success: boolean; error?: string }> {
+  const token = await getValidAccessToken();
+  if (!token) return { success: false, error: 'Not authenticated' };
+
+  try {
+    const response = await fetch(`${SPOTIFY_CONFIG.apiBaseUrl}/me/player/pause`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+
+    if (response.status === 204 || response.ok) {
+      return { success: true };
+    }
+
+    return { success: false, error: `API error: ${response.status}` };
+  } catch (error) {
+    console.error('Error pausing:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+/**
+ * Playback control - Next track
+ */
+async function playbackNext(): Promise<{ success: boolean; error?: string }> {
+  const token = await getValidAccessToken();
+  if (!token) return { success: false, error: 'Not authenticated' };
+
+  try {
+    const response = await fetch(`${SPOTIFY_CONFIG.apiBaseUrl}/me/player/next`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+
+    if (response.status === 204 || response.ok) {
+      return { success: true };
+    }
+
+    return { success: false, error: `API error: ${response.status}` };
+  } catch (error) {
+    console.error('Error skipping to next:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+/**
+ * Playback control - Previous track
+ */
+async function playbackPrevious(): Promise<{ success: boolean; error?: string }> {
+  const token = await getValidAccessToken();
+  if (!token) return { success: false, error: 'Not authenticated' };
+
+  try {
+    const response = await fetch(`${SPOTIFY_CONFIG.apiBaseUrl}/me/player/previous`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+
+    if (response.status === 204 || response.ok) {
+      return { success: true };
+    }
+    return { success: false, error: `API error: ${response.status}` };
+  } catch (error) {
+    console.error('Error going to previous:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+/**
+ * Playback control - Seek to position
+ */
+async function playbackSeek(positionMs: number): Promise<{ success: boolean; error?: string }> {
+  const token = await getValidAccessToken();
+  if (!token) return { success: false, error: 'Not authenticated' };
+
+  try {
+    const response = await fetch(`${SPOTIFY_CONFIG.apiBaseUrl}/me/player/seek?position_ms=${positionMs}`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+
+    if (response.status === 204 || response.ok) {
+      return { success: true };
+    }
+    return { success: false, error: `API error: ${response.status}` };
+  } catch (error) {
+    console.error('Error seeking:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+/**
+ * Playback control - Toggle shuffle
+ */
+async function playbackShuffle(state: boolean): Promise<{ success: boolean; error?: string }> {
+  const token = await getValidAccessToken();
+  if (!token) return { success: false, error: 'Not authenticated' };
+
+  try {
+    const response = await fetch(`${SPOTIFY_CONFIG.apiBaseUrl}/me/player/shuffle?state=${state}`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+
+    if (response.status === 204 || response.ok) {
+      return { success: true };
+    }
+    return { success: false, error: `API error: ${response.status}` };
+  } catch (error) {
+    console.error('Error toggling shuffle:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+/**
+ * Playback control - Set repeat mode
+ */
+async function playbackRepeat(state: 'off' | 'track' | 'context'): Promise<{ success: boolean; error?: string }> {
+  const token = await getValidAccessToken();
+  if (!token) return { success: false, error: 'Not authenticated' };
+
+  try {
+    const response = await fetch(`${SPOTIFY_CONFIG.apiBaseUrl}/me/player/repeat?state=${state}`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+
+    if (response.status === 204 || response.ok) {
+      return { success: true };
+    }
+    return { success: false, error: `API error: ${response.status}` };
+  } catch (error) {
+    console.error('Error setting repeat:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+/**
+ * Open URL in default browser with Linux fallback
+ */
+async function openExternalUrl(url: string): Promise<void> {
+  console.log('Opening URL:', url);
+
+  try {
+    // Try shell.openExternal first
+    await shell.openExternal(url);
+    console.log('Opened with shell.openExternal');
+  } catch (error) {
+    console.error('shell.openExternal failed:', error);
+
+    // Fallback: use xdg-open on Linux
+    if (process.platform === 'linux') {
+      console.log('Trying xdg-open fallback...');
+      try {
+        await execAsync(`xdg-open "${url}"`);
+        console.log('Opened with xdg-open');
+      } catch (xdgError) {
+        console.error('xdg-open also failed:', xdgError);
+        throw xdgError;
+      }
+    } else {
+      throw error;
+    }
+  }
+}
+
+// Spotify IPC Handlers
+ipcMain.handle(IPC.SPOTIFY_CONNECT, async () => {
+  try {
+    // Generate PKCE codes
+    codeVerifier = generateCodeVerifier();
+    const codeChallenge = generateCodeChallenge(codeVerifier);
+    oauthState = randomBytes(16).toString('hex');
+
+    // Start OAuth callback server
+    await startOAuthServer();
+
+    // Build auth URL
+    const params = new URLSearchParams({
+      client_id: SPOTIFY_CONFIG.clientId,
+      response_type: 'code',
+      redirect_uri: SPOTIFY_CONFIG.redirectUri,
+      scope: SPOTIFY_CONFIG.scopes.join(' '),
+      code_challenge_method: 'S256',
+      code_challenge: codeChallenge,
+      state: oauthState,
+    });
+
+    const authUrl = `${SPOTIFY_CONFIG.authUrl}?${params.toString()}`;
+    console.log('Spotify auth URL generated');
+
+    // Open in default browser with fallback
+    await openExternalUrl(authUrl);
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error initiating Spotify auth:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle(IPC.SPOTIFY_DISCONNECT, () => {
+  clearTokens();
+  mainWindow?.webContents.send(IPC.SPOTIFY_AUTH_UPDATE, { connected: false });
+  return { success: true };
+});
+
+ipcMain.handle(IPC.SPOTIFY_STATUS, () => {
+  return {
+    connected: spotifyTokens !== null,
+    expiresAt: spotifyTokens?.expiresAt,
+  };
+});
+
+ipcMain.handle(IPC.SPOTIFY_NOW_PLAYING, async () => {
+  return await fetchNowPlaying();
+});
+
+ipcMain.handle(IPC.SPOTIFY_AUDIO_FEATURES, async (_, trackId: string) => {
+  return await fetchAudioFeatures(trackId);
+});
+
+// Playback control handlers
+ipcMain.handle(IPC.SPOTIFY_PLAY, async () => {
+  return await playbackPlay();
+});
+
+ipcMain.handle(IPC.SPOTIFY_PAUSE, async () => {
+  return await playbackPause();
+});
+
+ipcMain.handle(IPC.SPOTIFY_NEXT, async () => {
+  return await playbackNext();
+});
+
+ipcMain.handle(IPC.SPOTIFY_PREVIOUS, async () => {
+  return await playbackPrevious();
+});
+
+ipcMain.handle(IPC.SPOTIFY_SEEK, async (_, positionMs: number) => {
+  return await playbackSeek(positionMs);
+});
+
+ipcMain.handle(IPC.SPOTIFY_SHUFFLE, async (_, state: boolean) => {
+  return await playbackShuffle(state);
+});
+
+ipcMain.handle(IPC.SPOTIFY_REPEAT, async (_, state: 'off' | 'track' | 'context') => {
+  return await playbackRepeat(state);
+});
+
 // App lifecycle
 app.whenReady().then(() => {
+  // Load stored Spotify tokens
+  loadStoredTokens();
+
   createWindow();
 
   app.on('activate', () => {
