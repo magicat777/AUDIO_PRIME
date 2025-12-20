@@ -17,10 +17,22 @@ import * as fs from 'fs';
 import { config as dotenvConfig } from 'dotenv';
 import { autoUpdater } from 'electron-updater';
 
-// Load environment variables from .env file (for development)
-dotenvConfig({ path: join(__dirname, '../.env') });
-// Also try loading from app root for production builds
-dotenvConfig({ path: join(app.getAppPath(), '.env') });
+// Load environment variables from .env file
+// Try multiple locations in order of priority (only load if file exists)
+const envPaths = [
+  { path: join(os.homedir(), '.config', 'audio-prime', '.env'), name: 'user config' },
+  { path: join(process.resourcesPath, '.env'), name: 'resources' },
+  { path: join(__dirname, '../.env'), name: 'development' },
+  { path: join(app.getAppPath(), '.env'), name: 'app' },
+];
+
+for (const env of envPaths) {
+  if (fs.existsSync(env.path)) {
+    dotenvConfig({ path: env.path, quiet: true });
+    console.log(`Loaded .env from ${env.name}:`, env.path);
+    break; // Stop after first successful load
+  }
+}
 
 const execAsync = promisify(exec);
 
@@ -254,7 +266,8 @@ function createWindow(): void {
               "default-src 'self'",
               "script-src 'self'",
               "style-src 'self' 'unsafe-inline'",  // Svelte uses inline styles
-              "img-src 'self' https://i.scdn.co data:",  // Spotify album art + data URIs
+              "worker-src 'self' blob:",  // FFT Web Worker
+              "img-src 'self' https://i.scdn.co https://*.scdn.co https://*.spotifycdn.com data:",  // Spotify album art + data URIs
               "connect-src 'self' https://api.spotify.com https://accounts.spotify.com",
               "font-src 'self'",
               "object-src 'none'",
@@ -1242,13 +1255,27 @@ function initAutoUpdater(): void {
   });
 
   autoUpdater.on('error', (error) => {
-    console.error('Auto-updater error:', error.message);
+    // Suppress "no published versions" error - expected for new releases
+    if (error.message?.includes('No published versions') ||
+        error.message?.includes('net::ERR_') ||
+        error.message?.includes('ENOTFOUND')) {
+      console.log('Auto-updater: No releases available yet');
+    } else {
+      console.error('Auto-updater error:', error.message);
+    }
   });
 
   // Check for updates after a short delay
   setTimeout(() => {
     autoUpdater.checkForUpdates().catch((err) => {
-      console.error('Failed to check for updates:', err.message);
+      // Suppress expected errors
+      if (err.message?.includes('No published versions') ||
+          err.message?.includes('net::ERR_') ||
+          err.message?.includes('ENOTFOUND')) {
+        console.log('Auto-updater: No releases available yet');
+      } else {
+        console.error('Failed to check for updates:', err.message);
+      }
     });
   }, 5000);
 }

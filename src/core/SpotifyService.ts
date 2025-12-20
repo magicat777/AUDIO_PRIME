@@ -207,66 +207,22 @@ class SpotifyServiceClass {
 
       this.nowPlaying.set(newNowPlaying);
 
-      // Fetch audio features if track changed
+      // Track ID for change detection (audio features API deprecated Nov 2024)
       if (data.track && data.track.id !== this.lastTrackId) {
         this.lastTrackId = data.track.id;
-        this.fetchAudioFeatures(data.track.id);
+        // Audio features API deprecated by Spotify in Nov 2024 - disabled
+        // this.fetchAudioFeatures(data.track.id);
       } else if (!data.track) {
         this.lastTrackId = null;
-        this.audioFeatures.set(defaultAudioFeatures);
       }
     } catch (error) {
       console.error('Error polling now playing:', error);
     }
   }
 
-  // Track if we've already warned about audio features being unavailable
-  private audioFeaturesUnavailable = false;
-
-  /**
-   * Fetch audio features for a track
-   */
-  private async fetchAudioFeatures(trackId: string): Promise<void> {
-    // Skip if we know the API is restricted
-    if (this.audioFeaturesUnavailable) return;
-
-    try {
-      const data = await window.electronAPI.spotify.getAudioFeatures(trackId);
-
-      if (data.error) {
-        // Only warn once about API restriction
-        if (data.error.includes('restricted') || data.error.includes('403')) {
-          if (!this.audioFeaturesUnavailable) {
-            console.warn('Spotify audio features API is restricted (deprecated Nov 2024)');
-            this.audioFeaturesUnavailable = true;
-          }
-        } else {
-          console.warn('Audio features unavailable:', data.error);
-        }
-        return;
-      }
-
-      const features: SpotifyAudioFeatures = {
-        tempo: data.tempo,
-        key: data.key,
-        mode: data.mode,
-        keyName: getKeyName(data.key, data.mode),
-        energy: data.energy,
-        danceability: data.danceability,
-        valence: data.valence,
-        acousticness: data.acousticness,
-        instrumentalness: data.instrumentalness,
-        liveness: data.liveness,
-        speechiness: data.speechiness,
-        loudness: data.loudness,
-        timeSignature: data.timeSignature,
-      };
-
-      this.audioFeatures.set(features);
-    } catch (error) {
-      console.warn('Error fetching audio features:', error);
-    }
-  }
+  // Audio features API deprecated by Spotify in Nov 2024 - code preserved for reference
+  // private audioFeaturesUnavailable = false;
+  // private async fetchAudioFeatures(trackId: string): Promise<void> { ... }
 
   /**
    * Format duration from milliseconds to MM:SS

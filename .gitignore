@@ -27,3 +27,6 @@ Thumbs.db
 
 # Vite cache
 .vite/
+
+# Production credentials (do not commit)
+build/.env.production

@@ -1,6 +1,6 @@
 {
   "name": "audio-prime",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Professional web-based audio spectrum analyzer with full OMEGA feature parity",
   "homepage": "https://github.com/magicat777/AUDIO_PRIME",
   "main": "dist-electron/main.js",
@@ -80,6 +80,12 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "build/.env.production",
+        "to": ".env"
+      }
     ],
     "publish": {
       "provider": "github",
