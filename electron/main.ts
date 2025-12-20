@@ -4,10 +4,10 @@ if (process.env.APPIMAGE || process.platform === 'linux') {
   process.argv.push('--no-sandbox');
 }
 
-// Suppress noisy Chromium DevTools errors (Autofill, etc.)
-process.argv.push('--disable-features=AutofillServerCommunication');
-
 import { app, BrowserWindow, ipcMain, shell, safeStorage, session } from 'electron';
+
+// Suppress noisy Chromium DevTools errors (Autofill, etc.)
+app.commandLine.appendSwitch('disable-features', 'AutofillServerCommunication');
 import { join } from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { exec } from 'child_process';
@@ -285,8 +285,8 @@ function createWindow(): void {
   }
 
   mainWindow = new BrowserWindow({
-    width: 1157,
-    height: 1333,
+    width: 1715,
+    height: 1410,
     minWidth: 1000,
     minHeight: 800,
     backgroundColor: '#0a0a0f',
