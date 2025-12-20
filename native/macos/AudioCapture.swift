@@ -3,85 +3,16 @@
 import Foundation
 import AVFoundation
 import CoreAudio
+import ScreenCaptureKit
 
-/// Simple CoreAudio capture utility for AUDIO_PRIME
-/// Captures system audio and outputs raw PCM float32le to stdout
-/// Usage: ./AudioCapture [deviceUID]
+/// macOS System Audio Capture for AUDIO_PRIME
+/// Uses ScreenCaptureKit (macOS 12.3+) to capture system audio output
+/// Outputs raw PCM float32le to stdout at 48kHz stereo
 
-class AudioCapture {
-    private var audioEngine: AVAudioEngine?
-    private var inputNode: AVAudioInputNode?
+@available(macOS 12.3, *)
+class SystemAudioCapture: NSObject {
+    private var stream: SCStream?
     private let sampleRate: Double = 48000.0
-    private let channelCount: UInt32 = 2
-
-    init() {
-        setupAudioEngine()
-    }
-
-    private func setupAudioEngine() {
-        audioEngine = AVAudioEngine()
-
-        guard let engine = audioEngine else {
-            fputs("ERROR: Failed to create audio engine\n", stderr)
-            exit(1)
-        }
-
-        inputNode = engine.inputNode
-
-        guard let input = inputNode else {
-            fputs("ERROR: Failed to get input node\n", stderr)
-            exit(1)
-        }
-
-        // Set up the desired format: 48kHz, stereo, float32
-        let format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: sampleRate,
-            channels: channelCount,
-            interleaved: true
-        )
-
-        guard let audioFormat = format else {
-            fputs("ERROR: Failed to create audio format\n", stderr)
-            exit(1)
-        }
-
-        // Install tap to capture audio
-        input.installTap(onBus: 0, bufferSize: 512, format: audioFormat) { [weak self] buffer, time in
-            self?.processAudioBuffer(buffer)
-        }
-    }
-
-    private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
-        guard let channelData = buffer.floatChannelData else { return }
-
-        let frameLength = Int(buffer.frameLength)
-        let channelCount = Int(self.channelCount)
-
-        // Convert to interleaved float32 format
-        var interleavedData = [Float](repeating: 0, count: frameLength * channelCount)
-
-        if channelCount == 1 {
-            // Mono - direct copy
-            for frame in 0..<frameLength {
-                interleavedData[frame] = channelData[0][frame]
-            }
-        } else {
-            // Stereo - interleave channels
-            for frame in 0..<frameLength {
-                interleavedData[frame * 2] = channelData[0][frame]
-                interleavedData[frame * 2 + 1] = channelData[1][frame]
-            }
-        }
-
-        // Write raw bytes to stdout
-        interleavedData.withUnsafeBytes { bytes in
-            if let baseAddress = bytes.baseAddress {
-                let data = Data(bytes: baseAddress, count: bytes.count)
-                FileHandle.standardOutput.write(data)
-            }
-        }
-    }
 
     func listDevices() {
         var propertyAddress = AudioObjectPropertyAddress(
@@ -121,15 +52,67 @@ class AudioCapture {
             return
         }
 
-        fputs("Available audio devices:\n", stderr)
+        fputs("Available audio output devices:\n", stderr)
+        fputs("  system: System Audio (recommended - captures all playing audio)\n", stderr)
+
         for deviceID in deviceIDs {
             if let name = getDeviceName(deviceID),
                let uid = getDeviceUID(deviceID) {
-                let inputChannels = getDeviceChannelCount(deviceID, scope: kAudioDevicePropertyScopeInput)
-                if inputChannels > 0 {
-                    fputs("  \(uid): \(name) (\(inputChannels) channels)\n", stderr)
+                let outputChannels = getDeviceChannelCount(deviceID, scope: kAudioDevicePropertyScopeOutput)
+                if outputChannels > 0 {
+                    fputs("  \(uid): \(name) (\(outputChannels) channels)\n", stderr)
                 }
             }
+        }
+    }
+
+    func start() async {
+        do {
+            // Get available content for screen capture (includes system audio)
+            let availableContent = try await SCShareableContent.excludingDesktopWindows(
+                false,
+                onScreenWindowsOnly: true
+            )
+
+            // Configure to capture system audio only (no video)
+            let config = SCStreamConfiguration()
+            config.capturesAudio = true
+            config.sampleRate = Int(sampleRate)
+            config.channelCount = 2
+
+            // Don't capture video
+            config.width = 1
+            config.height = 1
+            config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
+
+            // Create filter to capture system audio
+            let filter = SCContentFilter(
+                display: availableContent.displays[0],
+                excludingWindows: availableContent.windows
+            )
+
+            // Create and start stream
+            stream = SCStream(filter: filter, configuration: config, delegate: nil)
+
+            // Add audio output handler
+            try stream?.addStreamOutput(self, type: .audio, sampleHandlerQueue: DispatchQueue(label: "AudioOutputQueue"))
+
+            try await stream?.startCapture()
+
+            fputs("System audio capture started. Press Ctrl+C to stop.\n", stderr)
+
+        } catch {
+            fputs("ERROR: Failed to start system audio capture: \(error.localizedDescription)\n", stderr)
+            fputs("NOTE: This requires Screen Recording permission in System Preferences > Privacy & Security\n", stderr)
+            exit(1)
+        }
+    }
+
+    func stop() async {
+        do {
+            try await stream?.stopCapture()
+        } catch {
+            fputs("Error stopping capture: \(error.localizedDescription)\n", stderr)
         }
     }
 
@@ -218,74 +201,73 @@ class AudioCapture {
 
         return channelCount
     }
+}
 
-    func start(deviceUID: String? = nil) {
-        guard let engine = audioEngine else {
-            fputs("ERROR: Audio engine not initialized\n", stderr)
-            exit(1)
+// MARK: - SCStreamOutput Delegate
+@available(macOS 12.3, *)
+extension SystemAudioCapture: SCStreamOutput {
+    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        guard type == .audio else { return }
+
+        // Get audio buffer
+        var blockBuffer: CMBlockBuffer?
+        var audioBufferListOut = AudioBufferList()
+        let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sampleBuffer,
+            bufferListSizeNeededOut: nil,
+            bufferListOut: &audioBufferListOut,
+            bufferListSize: MemoryLayout<AudioBufferList>.size,
+            blockBufferAllocator: nil,
+            blockBufferMemoryAllocator: nil,
+            flags: 0,
+            blockBufferOut: &blockBuffer
+        )
+
+        guard status == noErr else { return }
+        defer { blockBuffer = nil }
+
+        // Process each buffer
+        let buffers = UnsafeMutableAudioBufferListPointer(&audioBufferListOut)
+        for buffer in buffers {
+            guard let data = buffer.mData else { continue }
+
+            let samples = data.assumingMemoryBound(to: Float.self)
+
+            // Write raw float32 samples to stdout
+            let bytesData = Data(bytes: samples, count: Int(buffer.mDataByteSize))
+            FileHandle.standardOutput.write(bytesData)
         }
-
-        // If device UID specified, try to set it as input device
-        if let uid = deviceUID {
-            setInputDevice(uid: uid)
-        }
-
-        do {
-            try engine.start()
-            fputs("Audio capture started. Press Ctrl+C to stop.\n", stderr)
-
-            // Keep running until interrupted
-            RunLoop.main.run()
-        } catch {
-            fputs("ERROR: Failed to start audio engine: \(error.localizedDescription)\n", stderr)
-            exit(1)
-        }
-    }
-
-    private func setInputDevice(uid: String) {
-        // Note: Setting specific input device requires more complex CoreAudio API calls
-        // For now, this is a placeholder. The default input device will be used.
-        fputs("INFO: Using device: \(uid)\n", stderr)
-    }
-
-    func stop() {
-        audioEngine?.stop()
-        inputNode?.removeTap(onBus: 0)
     }
 }
 
-// Signal handling for clean shutdown
-var captureInstance: AudioCapture?
+// MARK: - Main Entry Point
+if #available(macOS 12.3, *) {
+    let capture = SystemAudioCapture()
 
-func signalHandler(_ signal: Int32) {
-    fputs("\nReceived signal \(signal), stopping...\n", stderr)
-    captureInstance?.stop()
-    exit(0)
-}
+    // Handle command line arguments
+    let args = CommandLine.arguments
 
-signal(SIGINT, signalHandler)
-signal(SIGTERM, signalHandler)
-
-// Main execution
-let args = CommandLine.arguments
-
-if args.count > 1 && (args[1] == "--list" || args[1] == "-l") {
-    let capture = AudioCapture()
-    capture.listDevices()
-    exit(0)
-}
-
-// Request microphone permission (required for audio capture on macOS)
-AVCaptureDevice.requestAccess(for: .audio) { granted in
-    if !granted {
-        fputs("ERROR: Microphone permission denied. Please grant permission in System Preferences.\n", stderr)
-        exit(1)
+    if args.count > 1 && (args[1] == "--list" || args[1] == "-l") {
+        capture.listDevices()
+        exit(0)
     }
 
-    captureInstance = AudioCapture()
-    let deviceUID = args.count > 1 ? args[1] : nil
-    captureInstance?.start(deviceUID: deviceUID)
-}
+    // Signal handling for clean shutdown
+    signal(SIGINT) { _ in
+        fputs("\nStopping capture...\n", stderr)
+        exit(0)
+    }
+    signal(SIGTERM) { _ in
+        exit(0)
+    }
 
-// Keep the main thread running
-RunLoop.main.run()
+    // Start capture
+    Task {
+        await capture.start()
+    }
+
+    RunLoop.main.run()
+} else {
+    fputs("ERROR: This application requires macOS 12.3 or later\n", stderr)
+    exit(1)
+}

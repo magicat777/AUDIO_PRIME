@@ -21,5 +21,9 @@
     <!-- Network access for Spotify API -->
     <key>com.apple.security.network.client</key>
     <true/>
+
+    <!-- Screen recording access for system audio capture (ScreenCaptureKit) -->
+    <key>com.apple.security.device.camera</key>
+    <true/>
 </dict>
 </plist>

@@ -68,12 +68,17 @@ Download the latest release for your platform:
 
 See [Releases](https://github.com/magicat777/AUDIO_PRIME/releases)
 
+**macOS Users**: On first launch, grant Screen Recording permission when prompted. This is required for system audio capture using ScreenCaptureKit. Go to System Settings > Privacy & Security > Screen Recording and enable AUDIO_PRIME
+
 ### Build from Source
 
 #### Prerequisites
 - **Node.js** 18+ and npm
 - **Linux**: PipeWire or PulseAudio with `parec` command (typically pre-installed)
-- **macOS**: Xcode Command Line Tools for building native audio capture module
+- **macOS**:
+  - macOS 12.3+ (Monterey or later)
+  - Xcode Command Line Tools for building native audio capture module
+  - Screen Recording permission (System Settings > Privacy & Security > Screen Recording)
 
 #### Setup
 ```bash
@@ -179,7 +184,7 @@ Use the sidebar toggles to show/hide panels:
 ### Audio Pipeline
 1. **Capture**:
    - **Linux**: `parec` subprocess captures system audio via PipeWire/PulseAudio
-   - **macOS**: CoreAudio native module captures system audio
+   - **macOS**: ScreenCaptureKit native module captures system audio output (macOS 12.3+)
 2. **Transport**: Raw PCM float32 data (48kHz stereo) streamed to Electron main process
 3. **Processing**: FFT analysis in AudioEngine with multi-resolution support
 4. **Rendering**: 60 FPS WebGL2/Canvas rendering in Svelte 5 components
@@ -198,7 +203,7 @@ Use the sidebar toggles to show/hide panels:
 | Build | Vite 6 |
 | Language | TypeScript 5.7 (strict mode) |
 | Rendering | WebGL2 + Canvas 2D |
-| Audio Capture | CoreAudio (macOS), PulseAudio/PipeWire (Linux) |
+| Audio Capture | ScreenCaptureKit (macOS 12.3+), PulseAudio/PipeWire (Linux) |
 | Testing | Vitest |
 | Linting | ESLint + Security plugins |
 
