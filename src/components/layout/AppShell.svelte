@@ -3,6 +3,8 @@
   import { get } from 'svelte/store';
   import Header from './Header.svelte';
   import Sidebar from './Sidebar.svelte';
+  import GridLayout from './GridLayout.svelte';
+  import DraggablePanel from './DraggablePanel.svelte';
   import SpectrumPanel from '../panels/SpectrumPanel.svelte';
   import MeterPanel from '../panels/MeterPanel.svelte';
   import BassDetailPanel from '../panels/BassDetailPanel.svelte';
@@ -16,6 +18,7 @@
   import SpotifyPanel from '../spotify/SpotifyPanel.svelte';
   import { audioEngine } from '../../core/AudioEngine';
   import { moduleVisibility } from '../../stores/moduleVisibility';
+  import { gridLayout } from '../../stores/gridLayout';
 
   let sidebarOpen = false;
   let isCapturing = false;
@@ -118,30 +121,38 @@
   <div class="main-content">
     <Sidebar open={sidebarOpen} on:close={() => (sidebarOpen = false)} />
 
-    <div class="visualization-area">
-      <div class="top-row">
-        {#if $moduleVisibility.spectrum}
-          <div class="spectrum-container">
-            <SpectrumPanel />
-          </div>
-        {/if}
-        {#if $moduleVisibility.bassDetail}
-          <div class="bass-container">
-            <BassDetailPanel />
-          </div>
-        {/if}
-        {#if $moduleVisibility.debug}
-          <div class="debug-container">
-            <DebugPanel />
-          </div>
-        {/if}
-      </div>
+    <GridLayout>
+      <!-- Spectrum Analyzer -->
+      {#if $moduleVisibility.spectrum}
+        <DraggablePanel panelId="spectrum" title="Spectrum">
+          <SpectrumPanel />
+        </DraggablePanel>
+      {/if}
 
-      <div class="meters-container">
-        {#if $moduleVisibility.vuMeters}
+      <!-- Bass Detail -->
+      {#if $moduleVisibility.bassDetail}
+        <DraggablePanel panelId="bassDetail" title="Bass Detail">
+          <BassDetailPanel />
+        </DraggablePanel>
+      {/if}
+
+      <!-- Debug Panel -->
+      {#if $moduleVisibility.debug}
+        <DraggablePanel panelId="debug" title="Debug">
+          <DebugPanel />
+        </DraggablePanel>
+      {/if}
+
+      <!-- VU Meters -->
+      {#if $moduleVisibility.vuMeters}
+        <DraggablePanel panelId="vuMeters" title="VU Meters">
           <MeterPanel />
-        {/if}
-        {#if $moduleVisibility.lufsMetering}
+        </DraggablePanel>
+      {/if}
+
+      <!-- LUFS Metering -->
+      {#if $moduleVisibility.lufsMetering}
+        <DraggablePanel panelId="lufsMetering" title="LUFS">
           <LUFSMeterPanel
             momentary={displayMomentary}
             shortTerm={displayShortTerm}
@@ -149,32 +160,51 @@
             range={displayRange}
             truePeak={displayTruePeak}
           />
-        {/if}
-        {#if $moduleVisibility.bpmTempo}
-          <BPMPanel />
-        {/if}
-        {#if $moduleVisibility.voiceDetection}
-          <VoicePanel />
-        {/if}
-        {#if $moduleVisibility.spotify}
-          <SpotifyPanel />
-        {/if}
-      </div>
-
-      {#if $moduleVisibility.stereoCorrelation || $moduleVisibility.goniometer || $moduleVisibility.oscilloscope}
-        <div class="stereo-analysis-container">
-          {#if $moduleVisibility.stereoCorrelation}
-            <StereoCorrelationPanel />
-          {/if}
-          {#if $moduleVisibility.goniometer}
-            <GoniometerPanel />
-          {/if}
-          {#if $moduleVisibility.oscilloscope}
-            <OscilloscopePanel />
-          {/if}
-        </div>
+        </DraggablePanel>
       {/if}
-    </div>
+
+      <!-- BPM/Tempo -->
+      {#if $moduleVisibility.bpmTempo}
+        <DraggablePanel panelId="bpmTempo" title="BPM/Tempo">
+          <BPMPanel />
+        </DraggablePanel>
+      {/if}
+
+      <!-- Voice Detection -->
+      {#if $moduleVisibility.voiceDetection}
+        <DraggablePanel panelId="voiceDetection" title="Voice">
+          <VoicePanel />
+        </DraggablePanel>
+      {/if}
+
+      <!-- Spotify -->
+      {#if $moduleVisibility.spotify}
+        <DraggablePanel panelId="spotify" title="Spotify">
+          <SpotifyPanel />
+        </DraggablePanel>
+      {/if}
+
+      <!-- Stereo Correlation -->
+      {#if $moduleVisibility.stereoCorrelation}
+        <DraggablePanel panelId="stereoCorrelation" title="Stereo">
+          <StereoCorrelationPanel />
+        </DraggablePanel>
+      {/if}
+
+      <!-- Goniometer -->
+      {#if $moduleVisibility.goniometer}
+        <DraggablePanel panelId="goniometer" title="Goniometer">
+          <GoniometerPanel />
+        </DraggablePanel>
+      {/if}
+
+      <!-- Oscilloscope -->
+      {#if $moduleVisibility.oscilloscope}
+        <DraggablePanel panelId="oscilloscope" title="Oscilloscope">
+          <OscilloscopePanel />
+        </DraggablePanel>
+      {/if}
+    </GridLayout>
   </div>
 </div>
 
@@ -192,79 +222,5 @@
     display: flex;
     overflow: hidden;
     position: relative;
-  }
-
-  .visualization-area {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    padding: var(--panel-padding);
-    gap: var(--panel-padding);
-    overflow: hidden;
-  }
-
-  .top-row {
-    flex: 1;
-    display: flex;
-    gap: var(--panel-padding);
-    min-height: 300px;
-  }
-
-  .spectrum-container {
-    flex: 2;
-    min-width: 400px;
-    background: var(--bg-panel);
-    border-radius: var(--border-radius);
-    border: 1px solid var(--border-color);
-    overflow: hidden;
-  }
-
-  .bass-container {
-    flex: 1;
-    min-width: 280px;
-    max-width: 400px;
-  }
-
-  .debug-container {
-    width: 220px;
-    min-width: 200px;
-    max-width: 250px;
-    overflow: hidden;
-  }
-
-  .meters-container {
-    height: 140px;
-    display: flex;
-    gap: var(--panel-padding);
-  }
-
-  .stereo-analysis-container {
-    display: flex;
-    gap: var(--panel-padding);
-    align-items: stretch;
-  }
-
-  @media (max-width: 1400px) {
-    .top-row {
-      flex-direction: column;
-    }
-
-    .spectrum-container {
-      flex: 2;
-      min-height: 250px;
-    }
-
-    .bass-container {
-      flex: 1;
-      min-height: 150px;
-      max-width: none;
-    }
-  }
-
-  @media (max-width: 1000px) {
-    .meters-container {
-      flex-direction: column;
-      height: auto;
-    }
   }
 </style>

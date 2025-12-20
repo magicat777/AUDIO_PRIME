@@ -17,6 +17,13 @@
   let containerWidth = 0;
   let containerHeight = 0;
 
+  // Frequency cursor state
+  let cursorX = 0;
+  let cursorY = 0;
+  let cursorVisible = false;
+  let cursorFreq = 0;
+  let cursorDb = -100;
+
   // Subscribe to both spectrum sources
   const unsubStandard = audioEngine.spectrum.subscribe((data) => {
     spectrumStandard = data;
@@ -37,6 +44,59 @@
   // Toggle FFT mode
   function toggleMode() {
     audioEngine.toggleFFTMode();
+  }
+
+  // Frequency cursor handlers
+  function handleMouseMove(event: MouseEvent) {
+    const rect = container.getBoundingClientRect();
+    cursorX = event.clientX - rect.left;
+    cursorY = event.clientY - rect.top;
+    cursorVisible = true;
+
+    // Calculate frequency and dB at cursor position
+    const graphLeft = MARGIN_LEFT;
+    const graphRight = containerWidth - MARGIN_RIGHT;
+    const graphTop = MARGIN_TOP;
+    const graphBottom = containerHeight - MARGIN_BOTTOM;
+    const graphWidth = graphRight - graphLeft;
+    const graphHeight = graphBottom - graphTop;
+
+    // Check if cursor is within graph area
+    if (cursorX >= graphLeft && cursorX <= graphRight &&
+        cursorY >= graphTop && cursorY <= graphBottom) {
+
+      // Calculate normalized position (0-1) in graph area
+      const normalizedX = (cursorX - graphLeft) / graphWidth;
+
+      // Logarithmic frequency mapping (20Hz - 20kHz)
+      const minFreq = 20;
+      const maxFreq = 20000;
+      const logMin = Math.log10(minFreq);
+      const logMax = Math.log10(maxFreq);
+      const logFreq = logMin + normalizedX * (logMax - logMin);
+      cursorFreq = Math.pow(10, logFreq);
+
+      // Get the closest bar index
+      const barIndex = Math.floor(normalizedX * currentSpectrum.length);
+      const clampedIndex = Math.max(0, Math.min(currentSpectrum.length - 1, barIndex));
+
+      // Get the amplitude value (0-1 linear) and convert to dB
+      const amplitude = currentSpectrum[clampedIndex] || 0;
+      // Map the normalized amplitude to dB (-60 to 0)
+      cursorDb = amplitude > 0.001 ? -60 + amplitude * 60 : -100;
+    }
+  }
+
+  function handleMouseLeave() {
+    cursorVisible = false;
+  }
+
+  // Format frequency for display
+  function formatFreq(freq: number): string {
+    if (freq >= 1000) {
+      return (freq / 1000).toFixed(freq >= 10000 ? 1 : 2) + ' kHz';
+    }
+    return freq.toFixed(0) + ' Hz';
   }
 
   // Margin configuration (must match ScaleOverlay and SpectrumRenderer)
@@ -158,10 +218,29 @@
   });
 </script>
 
-<div class="spectrum-panel" bind:this={container}>
+<!-- svelte-ignore a11y-no-static-element-interactions -->
+<div
+  class="spectrum-panel"
+  bind:this={container}
+  on:mousemove={handleMouseMove}
+  on:mouseleave={handleMouseLeave}
+>
   <canvas class="webgl-canvas" bind:this={canvas}></canvas>
   <canvas class="peak-canvas" bind:this={peakCanvas}></canvas>
   <ScaleOverlay width={containerWidth} height={containerHeight} {fftMode} />
+
+  <!-- Frequency Cursor -->
+  {#if cursorVisible && cursorFreq > 0}
+    <div class="cursor-line" style="left: {cursorX}px;"></div>
+    <div
+      class="cursor-tooltip"
+      style="left: {cursorX}px; top: {cursorY}px;"
+      class:flip-left={cursorX > containerWidth - 120}
+    >
+      <span class="cursor-freq">{formatFreq(cursorFreq)}</span>
+      <span class="cursor-db">{cursorDb > -99 ? cursorDb.toFixed(1) : '---'} dB</span>
+    </div>
+  {/if}
 
   <!-- FFT Mode Toggle Button -->
   <button
@@ -243,5 +322,48 @@
 
   .toggle-indicator.multi-res {
     background: #22c55e;
+  }
+
+  /* Frequency Cursor */
+  .cursor-line {
+    position: absolute;
+    top: 20px;
+    bottom: 30px;
+    width: 1px;
+    background: rgba(255, 255, 255, 0.4);
+    pointer-events: none;
+    z-index: 15;
+  }
+
+  .cursor-tooltip {
+    position: absolute;
+    transform: translate(8px, -50%);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 8px;
+    background: rgba(20, 25, 35, 0.95);
+    border: 1px solid rgba(74, 158, 255, 0.5);
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 25;
+    white-space: nowrap;
+  }
+
+  .cursor-tooltip.flip-left {
+    transform: translate(-100%, -50%) translateX(-8px);
+  }
+
+  .cursor-freq {
+    font-size: 11px;
+    font-family: monospace;
+    font-weight: 600;
+    color: var(--accent-color);
+  }
+
+  .cursor-db {
+    font-size: 10px;
+    font-family: monospace;
+    color: var(--text-secondary);
   }
 </style>

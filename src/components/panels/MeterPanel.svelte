@@ -27,6 +27,10 @@
   let lastTime = performance.now();
   let animationId: number | null = null;
 
+  // Crest factor tracking
+  let crestFactorL = 0;
+  let crestFactorR = 0;
+
   // Reactive trigger for Svelte 5 - forces DOM update
   let frameCount = 0;
   $: displayLeftLevel = leftLevel + frameCount * 0;  // Depend on frameCount for reactivity
@@ -34,6 +38,8 @@
   $: displayPeakLevel = peakLevel + frameCount * 0;
   $: displayPeakHoldL = peakHoldL + frameCount * 0;
   $: displayPeakHoldR = peakHoldR + frameCount * 0;
+  $: displayCrestL = crestFactorL + frameCount * 0;
+  $: displayCrestR = crestFactorR + frameCount * 0;
 
   // Update loop (runs every frame for smooth animation)
   function updateMeters() {
@@ -80,6 +86,18 @@
       peakHoldR = rawRightLevel;
     } else if (now - peakHoldTime > PEAK_HOLD_MS) {
       peakHoldR = Math.max(peakHoldR - PEAK_DECAY_RATE * (deltaTime / 16.67), rawRightLevel);
+    }
+
+    // Calculate crest factor (Peak - RMS in dB)
+    // Crest factor indicates dynamic range / punchiness
+    // Typical values: 3-6 dB for compressed audio, 12-20+ dB for dynamic audio
+    if (rawLeftLevel > -99 && peakHoldL > -99) {
+      const newCrestL = peakHoldL - rawLeftLevel;
+      crestFactorL = crestFactorL * 0.9 + newCrestL * 0.1; // Smooth
+    }
+    if (rawRightLevel > -99 && peakHoldR > -99) {
+      const newCrestR = peakHoldR - rawRightLevel;
+      crestFactorR = crestFactorR * 0.9 + newCrestR * 0.1; // Smooth
     }
 
     // Continue animation loop
@@ -165,13 +183,36 @@
     <span>-3</span>
     <span>0</span>
   </div>
+
+  <div class="stats-row">
+    <div class="stat-group">
+      <span class="stat-label">RMS</span>
+      <span class="stat-value mono">L: {displayLeftLevel > -100 ? displayLeftLevel.toFixed(1) : '---'}</span>
+      <span class="stat-value mono">R: {displayRightLevel > -100 ? displayRightLevel.toFixed(1) : '---'}</span>
+    </div>
+    <div class="stat-group">
+      <span class="stat-label">CREST</span>
+      <span class="stat-value mono" class:high-crest={displayCrestL > 12}>
+        L: {displayCrestL > 0 ? displayCrestL.toFixed(1) : '---'}
+      </span>
+      <span class="stat-value mono" class:high-crest={displayCrestR > 12}>
+        R: {displayCrestR > 0 ? displayCrestR.toFixed(1) : '---'}
+      </span>
+    </div>
+    <div class="stat-group">
+      <span class="stat-label">AVG CREST</span>
+      <span class="stat-value mono crest-avg" class:compressed={((displayCrestL + displayCrestR) / 2) < 6} class:dynamic={((displayCrestL + displayCrestR) / 2) >= 12}>
+        {((displayCrestL + displayCrestR) / 2) > 0 ? ((displayCrestL + displayCrestR) / 2).toFixed(1) : '---'} dB
+      </span>
+    </div>
+  </div>
 </div>
 
 <style>
   .meter-panel {
-    width: 560px;
-    min-width: 480px;
-    max-width: 600px;
+    width: 100%;
+    height: 100%;
+    min-width: 300px;
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
@@ -179,6 +220,8 @@
     background: var(--bg-panel);
     border-radius: var(--border-radius);
     border: 1px solid var(--border-color);
+    box-sizing: border-box;
+    overflow: hidden;
   }
 
   .panel-header {
@@ -263,5 +306,46 @@
     font-family: var(--font-mono);
     font-size: 0.55rem;
     color: var(--text-muted);
+  }
+
+  .stats-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-top: 0.35rem;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .stat-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .stat-label {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+  }
+
+  .stat-value {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+  }
+
+  .stat-value.high-crest {
+    color: var(--meter-green);
+  }
+
+  .crest-avg {
+    font-weight: 500;
+  }
+
+  .crest-avg.compressed {
+    color: var(--meter-orange);
+  }
+
+  .crest-avg.dynamic {
+    color: var(--meter-green);
   }
 </style>

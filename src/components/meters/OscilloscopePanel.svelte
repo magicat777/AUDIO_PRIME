@@ -4,12 +4,13 @@
   import { audioEngine } from '../../core/AudioEngine';
 
   let canvas: HTMLCanvasElement;
+  let container: HTMLDivElement;
   let ctx: CanvasRenderingContext2D | null = null;
   let animationId: number | null = null;
 
-  // Canvas dimensions (height matches goniometer)
-  const WIDTH = 400;
-  const HEIGHT = 180;
+  // Canvas dimensions (responsive)
+  let canvasWidth = 400;
+  let canvasHeight = 180;
 
   // Trigger settings
   let triggerLevel = 0;
@@ -26,9 +27,33 @@
   // Pre-allocated buffer for mono conversion (PERFORMANCE: avoid allocation per frame)
   let monoWaveformBuffer: Float32Array | null = null;
 
+  // ResizeObserver for responsive canvas
+  let resizeObserver: ResizeObserver | null = null;
+
+  function handleResize(width: number, height: number) {
+    const newWidth = Math.floor(width);
+    const newHeight = Math.floor(height);
+    if (newWidth === canvasWidth && newHeight === canvasHeight) return;
+    if (newWidth < 50 || newHeight < 50) return;
+
+    canvasWidth = newWidth;
+    canvasHeight = newHeight;
+    canvas.width = newWidth;
+    canvas.height = newHeight;
+  }
+
   onMount(() => {
     ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    // Setup ResizeObserver
+    resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        handleResize(width, height);
+      }
+    });
+    resizeObserver.observe(container);
 
     animationId = requestAnimationFrame(render);
   });
@@ -36,6 +61,9 @@
   onDestroy(() => {
     if (animationId !== null) {
       cancelAnimationFrame(animationId);
+    }
+    if (resizeObserver) {
+      resizeObserver.disconnect();
     }
   });
 
@@ -175,8 +203,9 @@
       ctx.shadowBlur = 0;
     }
 
-    // Draw scale labels
-    ctx.font = '8px monospace';
+    // Draw scale labels (scale font with canvas size)
+    const fontSize = Math.max(8, Math.floor(Math.min(canvasWidth, canvasHeight) / 22));
+    ctx.font = `${fontSize}px monospace`;
     ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
@@ -201,13 +230,13 @@
   }
 </script>
 
-<div class="oscilloscope-panel">
+<div class="oscilloscope-panel" bind:this={container}>
   <div class="panel-header">
     <span class="title">OSCILLOSCOPE</span>
     <span class="subtitle">Waveform</span>
   </div>
   <div class="canvas-container">
-    <canvas bind:this={canvas} width={WIDTH} height={HEIGHT}></canvas>
+    <canvas bind:this={canvas} width={canvasWidth} height={canvasHeight}></canvas>
   </div>
 </div>
 
@@ -220,6 +249,10 @@
     border-radius: var(--border-radius);
     border: 1px solid var(--border-color);
     gap: 0.25rem;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
   }
 
   .panel-header {
@@ -228,6 +261,7 @@
     align-items: baseline;
     padding-bottom: 0.25rem;
     border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
   }
 
   .title {
@@ -244,12 +278,17 @@
   }
 
   .canvas-container {
+    flex: 1;
     display: flex;
     justify-content: center;
     align-items: center;
+    min-height: 0;
+    overflow: hidden;
   }
 
   canvas {
+    width: 100%;
+    height: 100%;
     border-radius: 4px;
   }
 </style>

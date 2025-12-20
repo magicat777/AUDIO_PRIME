@@ -202,8 +202,9 @@
   .spotify-panel {
     display: flex;
     flex-direction: column;
-    flex: 1.5;
-    min-width: 420px;
+    width: 100%;
+    height: 100%;
+    min-width: 280px;
     padding: 0.5rem 0.6rem;
     background: var(--bg-panel);
     border-radius: var(--border-radius);

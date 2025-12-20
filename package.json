@@ -36,7 +36,8 @@
   "license": "MIT",
   "dependencies": {
     "comlink": "^4.4.1",
-    "fft.js": "^4.0.4"
+    "fft.js": "^4.0.4",
+    "interactjs": "^1.10.27"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.0",

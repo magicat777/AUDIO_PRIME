@@ -151,7 +151,10 @@
     border-radius: var(--border-radius);
     border: 1px solid var(--border-color);
     gap: 0.5rem;
-    min-width: 160px;
+    width: 100%;
+    height: 100%;
+    min-width: 140px;
+    box-sizing: border-box;
     overflow: hidden;
   }
 

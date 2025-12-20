@@ -4,14 +4,15 @@
   import { audioEngine } from '../../core/AudioEngine';
 
   let canvas: HTMLCanvasElement;
+  let container: HTMLDivElement;
   let ctx: CanvasRenderingContext2D | null = null;
   let animationId: number | null = null;
 
   // Persistence buffer for phosphor-like effect
   let persistenceBuffer: ImageData | null = null;
 
-  // Canvas dimensions
-  const SIZE = 180;
+  // Canvas dimensions (responsive)
+  let canvasSize = 180;
 
   // PERFORMANCE: Pre-computed decay lookup table (0.94 multiplier)
   // This avoids multiplication and Math.floor in the hot loop
@@ -20,12 +21,39 @@
     DECAY_LUT[i] = (i * 0.94) | 0;  // Bitwise OR for fast floor
   }
 
+  // ResizeObserver for responsive canvas
+  let resizeObserver: ResizeObserver | null = null;
+
+  function handleResize(width: number, height: number) {
+    // Goniometer should be square, use smaller dimension
+    const size = Math.floor(Math.min(width, height));
+    if (size === canvasSize || size < 50) return;
+
+    canvasSize = size;
+    canvas.width = size;
+    canvas.height = size;
+
+    // Recreate persistence buffer at new size
+    if (ctx) {
+      persistenceBuffer = ctx.createImageData(size, size);
+    }
+  }
+
   onMount(() => {
     ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
 
     // Initialize persistence buffer
-    persistenceBuffer = ctx.createImageData(SIZE, SIZE);
+    persistenceBuffer = ctx.createImageData(canvasSize, canvasSize);
+
+    // Setup ResizeObserver
+    resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        handleResize(width, height);
+      }
+    });
+    resizeObserver.observe(container);
 
     // Start render loop
     animationId = requestAnimationFrame(render);
@@ -34,6 +62,9 @@
   onDestroy(() => {
     if (animationId !== null) {
       cancelAnimationFrame(animationId);
+    }
+    if (resizeObserver) {
+      resizeObserver.disconnect();
     }
   });
 
@@ -45,6 +76,12 @@
 
     const width = canvas.width;
     const height = canvas.height;
+
+    // Handle buffer size mismatch after resize
+    if (persistenceBuffer.width !== width || persistenceBuffer.height !== height) {
+      persistenceBuffer = ctx.createImageData(width, height);
+    }
+
     const centerX = width / 2;
     const centerY = height / 2;
     const scale = Math.min(width, height) / 2 - 12;
@@ -126,8 +163,9 @@
     ctx.arc(centerX, centerY, scale, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Draw axis labels
-    ctx.font = '8px monospace';
+    // Draw axis labels (scale font with canvas size)
+    const fontSize = Math.max(8, Math.floor(canvasSize / 22));
+    ctx.font = `${fontSize}px monospace`;
     ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
@@ -145,13 +183,13 @@
   }
 </script>
 
-<div class="goniometer-panel">
+<div class="goniometer-panel" bind:this={container}>
   <div class="panel-header">
     <span class="title">GONIOMETER</span>
     <span class="subtitle">Stereo Field</span>
   </div>
   <div class="canvas-container">
-    <canvas bind:this={canvas} width={SIZE} height={SIZE}></canvas>
+    <canvas bind:this={canvas} width={canvasSize} height={canvasSize}></canvas>
   </div>
 </div>
 
@@ -164,7 +202,10 @@
     border-radius: var(--border-radius);
     border: 1px solid var(--border-color);
     gap: 0.25rem;
-    width: fit-content;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
   }
 
   .panel-header {
@@ -173,6 +214,7 @@
     align-items: baseline;
     padding-bottom: 0.25rem;
     border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
   }
 
   .title {
@@ -189,13 +231,18 @@
   }
 
   .canvas-container {
+    flex: 1;
     display: flex;
     justify-content: center;
     align-items: center;
+    min-height: 0;
+    overflow: hidden;
   }
 
   canvas {
     background: rgb(8, 8, 12);
     border-radius: 4px;
+    max-width: 100%;
+    max-height: 100%;
   }
 </style>

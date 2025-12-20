@@ -163,8 +163,10 @@
     border: 1px solid var(--border-color);
     gap: 0.4rem;
     box-sizing: border-box;
-    width: 465px;
-    flex-shrink: 0;
+    width: 100%;
+    height: 100%;
+    min-width: 280px;
+    overflow: hidden;
   }
 
   .panel-header {
