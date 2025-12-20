@@ -58,6 +58,41 @@ let audioProcess: ChildProcess | null = null;
 // Window reference
 let mainWindow: BrowserWindow | null = null;
 
+// Helper function to get the AudioCapture binary path
+// Works in both development and production (packaged app)
+function getAudioCapturePath(): string {
+  // In production (packaged), the binary is in app.asar.unpacked or resources
+  // In development, it's in the build directory
+  const isDev = process.env.VITE_DEV_SERVER_URL !== undefined;
+
+  if (isDev) {
+    // Development: use the build directory
+    return join(__dirname, '../build/macos/AudioCapture');
+  } else {
+    // Production: try multiple locations
+    const paths = [
+      // First try: app.asar.unpacked (if binary is marked as unpacked)
+      join(process.resourcesPath, 'app.asar.unpacked', 'build', 'macos', 'AudioCapture'),
+      // Second try: directly in resources (from extraResources config)
+      join(process.resourcesPath, 'build', 'macos', 'AudioCapture'),
+      // Third try: relative to dist-electron
+      join(__dirname, '../build/macos/AudioCapture'),
+    ];
+
+    // Return the first path that exists
+    for (const path of paths) {
+      if (fs.existsSync(path)) {
+        console.log('Found AudioCapture binary at:', path);
+        return path;
+      }
+    }
+
+    // Fallback to first path and log warning
+    console.warn('AudioCapture binary not found, using fallback path:', paths[0]);
+    return paths[0];
+  }
+}
+
 // Spotify OAuth state
 let oauthServer: Server | null = null;
 let codeVerifier: string | null = null;
@@ -216,7 +251,7 @@ async function getAudioSourcesLinux(): Promise<AudioDevice[]> {
 
 async function getAudioSourcesMacOS(): Promise<AudioDevice[]> {
   try {
-    const audioCaptureBin = join(__dirname, '../build/macos/AudioCapture');
+    const audioCaptureBin = getAudioCapturePath();
     const { stdout, stderr } = await execAsync(`"${audioCaptureBin}" --list 2>&1`);
 
     const devices: AudioDevice[] = [];
@@ -278,7 +313,7 @@ function startAudioCapture(deviceId: string): void {
 
   if (process.platform === 'darwin') {
     // macOS: Use CoreAudio capture binary
-    const audioCaptureBin = join(__dirname, '../build/macos/AudioCapture');
+    const audioCaptureBin = getAudioCapturePath();
     const args = deviceId !== 'default' ? [deviceId] : [];
 
     audioProcess = spawn(audioCaptureBin, args);

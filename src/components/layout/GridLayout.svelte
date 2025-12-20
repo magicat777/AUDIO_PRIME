@@ -136,7 +136,8 @@
     position: relative;
     width: 100%;
     height: 100%;
-    overflow: hidden;
+    overflow-y: auto;
+    overflow-x: hidden;
     background: var(--bg-primary);
   }
 
@@ -160,11 +161,9 @@
   }
 
   .panels-container {
-    position: absolute;
-    top: 0;
-    left: 0;
+    position: relative;
     width: 100%;
-    height: 100%;
+    min-height: 100%;
     z-index: 1;
   }
 

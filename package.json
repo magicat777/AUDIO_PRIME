@@ -87,7 +87,15 @@
       {
         "from": "build/.env.production",
         "to": ".env"
+      },
+      {
+        "from": "build/macos",
+        "to": "build/macos",
+        "filter": ["**/*"]
       }
+    ],
+    "asarUnpack": [
+      "build/macos/**/*"
     ],
     "publish": {
       "provider": "github",
