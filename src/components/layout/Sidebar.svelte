@@ -12,12 +12,24 @@
   let devices: AudioDevice[] = [];
   let selectedDeviceId: string | null = null;
 
+  // Accordion state for audio sources
+  let monitorsExpanded = true;
+  let inputsExpanded = true;
+
   // Check if all panels are locked
   $: allLocked = Object.values($gridLayout.panels).every(p => p.locked);
   $: someLocked = Object.values($gridLayout.panels).some(p => p.locked);
 
-  // Get devices on mount
-  $: if (open && devices.length === 0) {
+  // Split devices by type
+  $: monitorDevices = devices.filter(d => d.type === 'monitor');
+  $: inputDevices = devices.filter(d => d.type === 'input');
+
+  // Refresh devices when sidebar opens
+  $: if (open) {
+    refreshDevices();
+  }
+
+  async function refreshDevices() {
     devices = audioEngine.getDevices();
   }
 
@@ -36,6 +48,19 @@
 
   function toggleModule(module: 'spectrum' | 'vuMeters' | 'bassDetail' | 'waterfall' | 'lufsMetering' | 'bpmTempo' | 'voiceDetection' | 'stereoCorrelation' | 'goniometer' | 'oscilloscope' | 'frequencyBands' | 'debug' | 'spotify') {
     moduleVisibility.toggle(module);
+  }
+
+  function formatSampleRate(rate: number): string {
+    if (rate >= 1000) {
+      return `${(rate / 1000).toFixed(1)}kHz`;
+    }
+    return `${rate}Hz`;
+  }
+
+  function formatChannels(ch: number): string {
+    if (ch === 1) return 'Mono';
+    if (ch === 2) return 'Stereo';
+    return `${ch}ch`;
   }
 </script>
 
@@ -56,34 +81,107 @@
   </div>
 
   <div class="sidebar-content">
-    <section class="section">
-      <h3>Audio Source</h3>
-      <div class="device-list">
-        {#each devices as device}
-          <button
-            class="device-item"
-            class:selected={device.id === selectedDeviceId}
-            on:click={() => selectDevice(device)}
-          >
-            <span class="device-icon">
-              {#if device.type === 'monitor'}
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <rect x="2" y="3" width="12" height="8" rx="1" stroke="currentColor" fill="none" />
-                  <path d="M6 13h4M8 11v2" stroke="currentColor" />
-                </svg>
-              {:else}
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <circle cx="8" cy="8" r="6" stroke="currentColor" fill="none" />
-                  <circle cx="8" cy="8" r="2" fill="currentColor" />
-                </svg>
-              {/if}
-            </span>
-            <span class="device-name">{device.name}</span>
-          </button>
-        {:else}
-          <p class="no-devices">No audio sources found</p>
-        {/each}
+    <section class="section audio-sources">
+      <div class="section-header-row">
+        <h3>Audio Sources</h3>
+        <button class="refresh-btn" on:click={refreshDevices} title="Refresh devices">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M13.65 2.35A8 8 0 1 0 16 8h-2a6 6 0 1 1-1.76-4.24L10 6h6V0l-2.35 2.35z"/>
+          </svg>
+        </button>
       </div>
+
+      <!-- Playback (Monitor) Sources -->
+      <div class="accordion-section">
+        <button
+          class="accordion-header"
+          class:expanded={monitorsExpanded}
+          on:click={() => monitorsExpanded = !monitorsExpanded}
+        >
+          <svg class="accordion-icon" width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+            <path d="M4 2l4 4-4 4" stroke="currentColor" stroke-width="2" fill="none"/>
+          </svg>
+          <span class="accordion-title">Playback (System Audio)</span>
+          <span class="device-count">{monitorDevices.length}</span>
+        </button>
+        {#if monitorsExpanded}
+          <div class="accordion-content">
+            {#each monitorDevices as device}
+              <button
+                class="device-item"
+                class:selected={device.id === selectedDeviceId}
+                class:running={device.state === 'running'}
+                on:click={() => selectDevice(device)}
+                title={device.description}
+              >
+                <span class="device-icon monitor">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                    <rect x="2" y="3" width="12" height="8" rx="1" stroke="currentColor" fill="none" />
+                    <path d="M6 13h4M8 11v2" stroke="currentColor" />
+                  </svg>
+                </span>
+                <div class="device-info">
+                  <span class="device-name">{device.name}</span>
+                  <span class="device-meta">{formatSampleRate(device.sampleRate)} {formatChannels(device.channels)}</span>
+                </div>
+                {#if device.state === 'running'}
+                  <span class="state-indicator running" title="Active"></span>
+                {/if}
+              </button>
+            {:else}
+              <p class="no-devices">No playback sources found</p>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
+      <!-- Recording (Input) Sources -->
+      <div class="accordion-section">
+        <button
+          class="accordion-header"
+          class:expanded={inputsExpanded}
+          on:click={() => inputsExpanded = !inputsExpanded}
+        >
+          <svg class="accordion-icon" width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+            <path d="M4 2l4 4-4 4" stroke="currentColor" stroke-width="2" fill="none"/>
+          </svg>
+          <span class="accordion-title">Recording (Inputs)</span>
+          <span class="device-count">{inputDevices.length}</span>
+        </button>
+        {#if inputsExpanded}
+          <div class="accordion-content">
+            {#each inputDevices as device}
+              <button
+                class="device-item"
+                class:selected={device.id === selectedDeviceId}
+                class:running={device.state === 'running'}
+                on:click={() => selectDevice(device)}
+                title={device.description}
+              >
+                <span class="device-icon input">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                    <circle cx="8" cy="6" r="3" stroke="currentColor" fill="none" />
+                    <path d="M8 9v3M5 14h6" stroke="currentColor" stroke-width="1.5" />
+                  </svg>
+                </span>
+                <div class="device-info">
+                  <span class="device-name">{device.name}</span>
+                  <span class="device-meta">{formatSampleRate(device.sampleRate)} {formatChannels(device.channels)}</span>
+                </div>
+                {#if device.state === 'running'}
+                  <span class="state-indicator running" title="Active"></span>
+                {/if}
+              </button>
+            {:else}
+              <p class="no-devices">No recording sources found</p>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
+      {#if devices.length === 0}
+        <p class="no-devices">No audio devices found. Is PulseAudio/PipeWire running?</p>
+      {/if}
     </section>
 
     <section class="section">
@@ -276,12 +374,6 @@
     margin-bottom: 0.75rem;
   }
 
-  .device-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
   .device-item {
     display: flex;
     align-items: center;
@@ -445,5 +537,158 @@
 
   .lock-icon, .grid-icon, .snap-icon, .reset-icon {
     font-size: 0.9rem;
+  }
+
+  /* Audio Sources Section */
+  .section-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+
+  .section-header-row h3 {
+    margin-bottom: 0;
+  }
+
+  .refresh-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .refresh-btn:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+  }
+
+  /* Accordion Styles */
+  .accordion-section {
+    margin-bottom: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .accordion-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-tertiary);
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .accordion-header:hover {
+    background: rgba(74, 158, 255, 0.1);
+    color: var(--text-primary);
+  }
+
+  .accordion-header.expanded {
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .accordion-icon {
+    transition: transform var(--transition-fast);
+    flex-shrink: 0;
+  }
+
+  .accordion-header.expanded .accordion-icon {
+    transform: rotate(90deg);
+  }
+
+  .accordion-title {
+    flex: 1;
+    text-align: left;
+    font-weight: 500;
+  }
+
+  .device-count {
+    font-size: 0.7rem;
+    padding: 0.1rem 0.4rem;
+    background: var(--bg-secondary);
+    border-radius: 10px;
+    color: var(--text-muted);
+  }
+
+  .accordion-content {
+    padding: 0.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  /* Device Item Styles */
+  .device-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    color: var(--text-muted);
+  }
+
+  .device-icon.monitor {
+    color: var(--accent-color);
+  }
+
+  .device-icon.input {
+    color: var(--meter-green);
+  }
+
+  .device-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+  }
+
+  .device-meta {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+  }
+
+  .device-item.running .device-meta {
+    color: var(--meter-green);
+  }
+
+  .state-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .state-indicator.running {
+    background: var(--meter-green);
+    box-shadow: 0 0 6px var(--meter-green);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .audio-sources .no-devices {
+    padding: 0.75rem;
+    text-align: center;
+    font-style: italic;
   }
 </style>

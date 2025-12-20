@@ -76,51 +76,86 @@ const IPC = {
 interface AudioDevice {
   id: string;
   name: string;
+  description: string;
   type: 'monitor' | 'input';
+  sampleRate: number;
+  channels: number;
+  format: string;
+  state: 'running' | 'idle' | 'suspended';
 }
 
-async function getMonitorSources(): Promise<AudioDevice[]> {
+async function getAudioSources(): Promise<AudioDevice[]> {
   try {
-    const { stdout } = await execAsync('pactl list sources short');
+    const { stdout } = await execAsync('pactl list sources 2>/dev/null');
     const devices: AudioDevice[] = [];
 
-    for (const line of stdout.split('\n')) {
-      if (!line.trim()) continue;
+    // Parse the detailed output
+    const sourceBlocks = stdout.split('Source #');
 
-      const parts = line.split('\t');
-      if (parts.length >= 2) {
-        const id = parts[1];
+    for (const block of sourceBlocks) {
+      if (!block.trim()) continue;
+
+      // Extract fields using regex
+      const nameMatch = block.match(/Name:\s*(.+)/);
+      const descMatch = block.match(/Description:\s*(.+)/);
+      const sampleMatch = block.match(/Sample Specification:\s*(\S+)\s+(\d+)ch\s+(\d+)Hz/);
+      const stateMatch = block.match(/State:\s*(\S+)/);
+
+      if (nameMatch) {
+        const id = nameMatch[1].trim();
+        const description = descMatch ? descMatch[1].trim() : id;
         const isMonitor = id.includes('.monitor');
 
-        // Create friendly name
-        let name = id;
-        if (id.includes('Scarlett')) {
-          name = isMonitor ? 'Scarlett 2i2 (System Audio)' : 'Scarlett 2i2 (Input)';
-        } else if (id.includes('Focusrite')) {
-          name = isMonitor ? 'Focusrite (System Audio)' : 'Focusrite (Input)';
-        } else {
-          // Generic name cleanup
-          name = id
-            .replace('alsa_output.', '')
-            .replace('alsa_input.', '')
-            .replace('.monitor', ' (Monitor)')
-            .replace(/-/g, ' ')
-            .replace(/\.[^.]+$/, '');
+        // Parse sample specification
+        let format = 's16le';
+        let channels = 2;
+        let sampleRate = 48000;
+        if (sampleMatch) {
+          format = sampleMatch[1];
+          channels = parseInt(sampleMatch[2], 10);
+          sampleRate = parseInt(sampleMatch[3], 10);
+        }
+
+        // Parse state
+        let state: 'running' | 'idle' | 'suspended' = 'idle';
+        if (stateMatch) {
+          const stateStr = stateMatch[1].toLowerCase();
+          if (stateStr === 'running') state = 'running';
+          else if (stateStr === 'suspended') state = 'suspended';
+        }
+
+        // Create friendly short name from description
+        let name = description;
+        // Shorten common prefixes
+        name = name.replace('Monitor of ', '');
+        // Truncate very long names
+        if (name.length > 50) {
+          name = name.substring(0, 47) + '...';
         }
 
         devices.push({
-          id: id,
-          name: name,
+          id,
+          name,
+          description,
           type: isMonitor ? 'monitor' : 'input',
+          sampleRate,
+          channels,
+          format,
+          state,
         });
       }
     }
 
-    // Sort: monitors first
+    // Sort: running first, then monitors, then by name
     devices.sort((a, b) => {
+      // Running devices first
+      if (a.state === 'running' && b.state !== 'running') return -1;
+      if (a.state !== 'running' && b.state === 'running') return 1;
+      // Then monitors
       if (a.type === 'monitor' && b.type !== 'monitor') return -1;
       if (a.type !== 'monitor' && b.type === 'monitor') return 1;
-      return 0;
+      // Then alphabetically
+      return a.name.localeCompare(b.name);
     });
 
     return devices;
@@ -215,7 +250,7 @@ function createWindow(): void {
 
 // IPC Handlers
 ipcMain.handle(IPC.AUDIO_DEVICES, async () => {
-  return await getMonitorSources();
+  return await getAudioSources();
 });
 
 ipcMain.handle(IPC.AUDIO_START, (_, deviceId: string) => {

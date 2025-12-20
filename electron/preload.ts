@@ -4,7 +4,12 @@ import { contextBridge, ipcRenderer } from 'electron';
 export interface AudioDevice {
   id: string;
   name: string;
+  description: string;
   type: 'monitor' | 'input';
+  sampleRate: number;
+  channels: number;
+  format: string;
+  state: 'running' | 'idle' | 'suspended';
 }
 
 export interface SpotifyStatus {

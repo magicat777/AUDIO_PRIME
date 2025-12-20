@@ -22,7 +22,12 @@ export type FFTMode = 'standard' | 'multiResolution';
 export interface AudioDevice {
   id: string;
   name: string;
+  description: string;
   type: 'monitor' | 'input';
+  sampleRate: number;
+  channels: number;
+  format: string;
+  state: 'running' | 'idle' | 'suspended';
 }
 
 export interface AudioState {
