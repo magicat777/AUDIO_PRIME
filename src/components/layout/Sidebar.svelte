@@ -34,7 +34,7 @@
     dispatch('close');
   }
 
-  function toggleModule(module: 'spectrum' | 'vuMeters' | 'bassDetail' | 'waterfall' | 'lufsMetering' | 'bpmTempo' | 'voiceDetection' | 'stereoCorrelation' | 'goniometer' | 'oscilloscope' | 'debug' | 'spotify') {
+  function toggleModule(module: 'spectrum' | 'vuMeters' | 'bassDetail' | 'waterfall' | 'lufsMetering' | 'bpmTempo' | 'voiceDetection' | 'stereoCorrelation' | 'goniometer' | 'oscilloscope' | 'frequencyBands' | 'debug' | 'spotify') {
     moduleVisibility.toggle(module);
   }
 </script>
@@ -132,6 +132,11 @@
         <label class="module-toggle">
           <input type="checkbox" checked={$moduleVisibility.oscilloscope} on:change={() => toggleModule('oscilloscope')} />
           <span>Oscilloscope</span>
+          <span class="badge stereo">NEW</span>
+        </label>
+        <label class="module-toggle">
+          <input type="checkbox" checked={$moduleVisibility.frequencyBands} on:change={() => toggleModule('frequencyBands')} />
+          <span>Frequency Bands</span>
           <span class="badge stereo">NEW</span>
         </label>
         <label class="module-toggle">

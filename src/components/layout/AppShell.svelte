@@ -14,6 +14,7 @@
   import StereoCorrelationPanel from '../meters/StereoCorrelationPanel.svelte';
   import GoniometerPanel from '../meters/GoniometerPanel.svelte';
   import OscilloscopePanel from '../meters/OscilloscopePanel.svelte';
+  import FrequencyBandsPanel from '../meters/FrequencyBandsPanel.svelte';
   import DebugPanel from '../panels/DebugPanel.svelte';
   import SpotifyPanel from '../spotify/SpotifyPanel.svelte';
   import { audioEngine } from '../../core/AudioEngine';
@@ -217,6 +218,13 @@
       {#if $moduleVisibility.oscilloscope}
         <DraggablePanel panelId="oscilloscope" title="Oscilloscope">
           <OscilloscopePanel />
+        </DraggablePanel>
+      {/if}
+
+      <!-- Frequency Bands -->
+      {#if $moduleVisibility.frequencyBands}
+        <DraggablePanel panelId="frequencyBands" title="Frequency Bands">
+          <FrequencyBandsPanel />
         </DraggablePanel>
       {/if}
     </GridLayout>

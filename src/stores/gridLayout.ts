@@ -48,6 +48,7 @@ const defaultLayouts: Record<string, Omit<PanelLayout, 'id'>> = {
 
   // Bottom row
   voiceDetection: { x: 0, y: 55, width: 46, height: 9, zIndex: 1, locked: false },
+  frequencyBands: { x: 46, y: 55, width: 22, height: 13, zIndex: 1, locked: false },
 };
 
 export type PanelId = keyof typeof defaultLayouts;
@@ -76,13 +77,22 @@ function loadFromStorage(): GridLayoutState {
       try {
         const parsed = JSON.parse(stored);
         // Merge with defaults to handle new panels
+        // For each default panel, use stored values if they exist and have valid position
+        const mergedPanels: Record<string, PanelLayout> = {};
+        for (const [id, defaultPanel] of Object.entries(defaultState.panels)) {
+          const storedPanel = parsed.panels?.[id];
+          if (storedPanel && typeof storedPanel.x === 'number' && typeof storedPanel.width === 'number') {
+            // Use stored panel but ensure it has the id
+            mergedPanels[id] = { ...defaultPanel, ...storedPanel, id };
+          } else {
+            // New panel or invalid stored data - use defaults
+            mergedPanels[id] = defaultPanel;
+          }
+        }
         return {
           ...defaultState,
           ...parsed,
-          panels: {
-            ...defaultState.panels,
-            ...parsed.panels,
-          },
+          panels: mergedPanels,
         };
       } catch {
         return defaultState;

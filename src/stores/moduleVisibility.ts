@@ -14,6 +14,7 @@ export interface ModuleVisibility {
   stereoCorrelation: boolean;
   goniometer: boolean;
   oscilloscope: boolean;
+  frequencyBands: boolean;
   debug: boolean;
   spotify: boolean;
 }
@@ -29,6 +30,7 @@ const defaultVisibility: ModuleVisibility = {
   stereoCorrelation: true, // Stereo analysis
   goniometer: true,    // Stereo field display
   oscilloscope: true,  // Waveform display
+  frequencyBands: true, // Frequency band analyzer
   debug: true,         // Toggleable
   spotify: true,       // Spotify integration
 };
