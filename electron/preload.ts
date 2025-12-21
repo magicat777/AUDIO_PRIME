@@ -67,6 +67,18 @@ export interface AudioSourceInfo {
   available: boolean;
 }
 
+export interface LayoutSaveResult {
+  success: boolean;
+  path?: string;
+  error?: string;
+}
+
+export interface LayoutLoadResult {
+  success: boolean;
+  data?: unknown;
+  error?: string;
+}
+
 export interface ElectronAPI {
   audio: {
     getDevices: () => Promise<AudioDevice[]>;
@@ -82,6 +94,10 @@ export interface ElectronAPI {
   system: {
     getMetrics: () => Promise<SystemMetrics>;
     getAudioInfo: () => Promise<AudioSourceInfo>;
+  };
+  layout: {
+    save: (data: unknown) => Promise<LayoutSaveResult>;
+    load: () => Promise<LayoutLoadResult>;
   };
   spotify: {
     connect: () => Promise<{ success: boolean; error?: string }>;
@@ -134,6 +150,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   system: {
     getMetrics: () => ipcRenderer.invoke('system:metrics'),
     getAudioInfo: () => ipcRenderer.invoke('system:audio-info'),
+  },
+  layout: {
+    save: (data: unknown) => ipcRenderer.invoke('layout:save', data),
+    load: () => ipcRenderer.invoke('layout:load'),
   },
   spotify: {
     connect: () => ipcRenderer.invoke('spotify:connect'),

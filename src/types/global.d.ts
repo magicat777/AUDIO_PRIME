@@ -66,6 +66,18 @@ export interface AudioSourceInfo {
   available: boolean;
 }
 
+export interface LayoutSaveResult {
+  success: boolean;
+  path?: string;
+  error?: string;
+}
+
+export interface LayoutLoadResult {
+  success: boolean;
+  data?: unknown;
+  error?: string;
+}
+
 export interface ElectronAPI {
   audio: {
     getDevices: () => Promise<AudioDevice[]>;
@@ -81,6 +93,10 @@ export interface ElectronAPI {
   system: {
     getMetrics: () => Promise<SystemMetrics>;
     getAudioInfo: () => Promise<AudioSourceInfo>;
+  };
+  layout: {
+    save: (data: unknown) => Promise<LayoutSaveResult>;
+    load: () => Promise<LayoutLoadResult>;
   };
   spotify: {
     connect: () => Promise<{ success: boolean; error?: string }>;

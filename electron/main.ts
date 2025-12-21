@@ -105,6 +105,9 @@ const IPC = {
   AUDIO_SELECT_DEVICE: 'audio:select-device',
   WINDOW_FULLSCREEN: 'window:fullscreen',
   WINDOW_QUIT: 'window:quit',
+  // Layout persistence
+  LAYOUT_SAVE: 'layout:save',
+  LAYOUT_LOAD: 'layout:load',
   // Spotify channels
   SPOTIFY_CONNECT: 'spotify:connect',
   SPOTIFY_DISCONNECT: 'spotify:disconnect',
@@ -373,6 +376,55 @@ ipcMain.handle(IPC.WINDOW_FULLSCREEN, () => {
 
 ipcMain.handle(IPC.WINDOW_QUIT, () => {
   app.quit();
+});
+
+// ============================================
+// Layout Persistence (File-based)
+// ============================================
+
+const LAYOUT_FILENAME = 'audio-prime-layout.json';
+
+/**
+ * Get the path to the layout file in user data directory
+ */
+function getLayoutFilePath(): string {
+  return join(app.getPath('userData'), LAYOUT_FILENAME);
+}
+
+/**
+ * Save layout data to file
+ */
+ipcMain.handle(IPC.LAYOUT_SAVE, async (_, layoutData: unknown) => {
+  try {
+    const filePath = getLayoutFilePath();
+    const jsonData = JSON.stringify(layoutData, null, 2);
+    fs.writeFileSync(filePath, jsonData, 'utf-8');
+    console.log('Layout saved to:', filePath);
+    return { success: true, path: filePath };
+  } catch (error) {
+    console.error('Error saving layout:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+/**
+ * Load layout data from file
+ */
+ipcMain.handle(IPC.LAYOUT_LOAD, async () => {
+  try {
+    const filePath = getLayoutFilePath();
+    if (!fs.existsSync(filePath)) {
+      console.log('No saved layout file found');
+      return { success: true, data: null };
+    }
+    const jsonData = fs.readFileSync(filePath, 'utf-8');
+    const layoutData = JSON.parse(jsonData);
+    console.log('Layout loaded from:', filePath);
+    return { success: true, data: layoutData };
+  } catch (error) {
+    console.error('Error loading layout:', error);
+    return { success: false, error: String(error) };
+  }
 });
 
 // ============================================

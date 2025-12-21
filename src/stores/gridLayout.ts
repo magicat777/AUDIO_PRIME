@@ -44,6 +44,10 @@ export interface LayoutPreset {
 // Maximum number of presets
 const MAX_PRESETS = 5;
 
+// Debounce timer for file saves
+let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+const SAVE_DEBOUNCE_MS = 500;
+
 // Panel position and size (in grid cells, not pixels)
 export interface PanelLayout {
   id: string;
@@ -107,35 +111,46 @@ const defaultState: GridLayoutState = {
   presets: [],
 };
 
-// Load from localStorage
-function loadFromStorage(): GridLayoutState {
+// Parse stored data and merge with defaults
+function parseStoredData(parsed: unknown): GridLayoutState {
+  if (!parsed || typeof parsed !== 'object') {
+    return defaultState;
+  }
+  const data = parsed as Record<string, unknown>;
+
+  // Merge with defaults to handle new panels
+  const mergedPanels: Record<string, PanelLayout> = {};
+  for (const [id, defaultPanel] of Object.entries(defaultState.panels)) {
+    const storedPanels = data['panels'] as Record<string, PanelLayout> | undefined;
+    const storedPanel = storedPanels?.[id];
+    if (storedPanel && typeof storedPanel.x === 'number' && typeof storedPanel.width === 'number') {
+      // Use stored panel but ensure it has the id
+      mergedPanels[id] = { ...defaultPanel, ...storedPanel, id };
+    } else {
+      // New panel or invalid stored data - use defaults
+      mergedPanels[id] = defaultPanel;
+    }
+  }
+
+  const storedPresets = data['presets'];
+  return {
+    ...defaultState,
+    ...data,
+    panels: mergedPanels,
+    // Always reset scale state on load (don't persist fullscreen state)
+    scale: defaultState.scale,
+    // Load presets if available
+    presets: Array.isArray(storedPresets) ? storedPresets as LayoutPreset[] : [],
+  };
+}
+
+// Load from localStorage (sync, for initial load)
+function loadFromLocalStorage(): GridLayoutState {
   if (typeof window !== 'undefined' && window.localStorage) {
     const stored = localStorage.getItem('audio-prime-grid-layout');
     if (stored) {
       try {
-        const parsed = JSON.parse(stored);
-        // Merge with defaults to handle new panels
-        // For each default panel, use stored values if they exist and have valid position
-        const mergedPanels: Record<string, PanelLayout> = {};
-        for (const [id, defaultPanel] of Object.entries(defaultState.panels)) {
-          const storedPanel = parsed.panels?.[id];
-          if (storedPanel && typeof storedPanel.x === 'number' && typeof storedPanel.width === 'number') {
-            // Use stored panel but ensure it has the id
-            mergedPanels[id] = { ...defaultPanel, ...storedPanel, id };
-          } else {
-            // New panel or invalid stored data - use defaults
-            mergedPanels[id] = defaultPanel;
-          }
-        }
-        return {
-          ...defaultState,
-          ...parsed,
-          panels: mergedPanels,
-          // Always reset scale state on load (don't persist fullscreen state)
-          scale: defaultState.scale,
-          // Load presets if available
-          presets: Array.isArray(parsed.presets) ? parsed.presets : [],
-        };
+        return parseStoredData(JSON.parse(stored));
       } catch {
         return defaultState;
       }
@@ -144,16 +159,73 @@ function loadFromStorage(): GridLayoutState {
   return defaultState;
 }
 
-// Save to localStorage
-function saveToStorage(state: GridLayoutState) {
+// Load from file via Electron IPC (async)
+async function loadFromFile(): Promise<GridLayoutState | null> {
+  if (typeof window !== 'undefined' && window.electronAPI?.layout) {
+    try {
+      const result = await window.electronAPI.layout.load();
+      if (result.success && result.data) {
+        console.log('Layout loaded from file');
+        return parseStoredData(result.data);
+      }
+    } catch (error) {
+      console.error('Error loading layout from file:', error);
+    }
+  }
+  return null;
+}
+
+// Save to file via Electron IPC (debounced)
+function saveToFile(state: GridLayoutState) {
+  if (typeof window !== 'undefined' && window.electronAPI?.layout) {
+    // Debounce to avoid too many writes
+    if (saveDebounceTimer) {
+      clearTimeout(saveDebounceTimer);
+    }
+    saveDebounceTimer = setTimeout(async () => {
+      try {
+        // Only save panels, presets, gridVisible, snapEnabled (not scale state)
+        const dataToSave = {
+          panels: state.panels,
+          presets: state.presets,
+          gridVisible: state.gridVisible,
+          snapEnabled: state.snapEnabled,
+        };
+        await window.electronAPI.layout.save(dataToSave);
+      } catch (error) {
+        console.error('Error saving layout to file:', error);
+      }
+    }, SAVE_DEBOUNCE_MS);
+  }
+}
+
+// Save to localStorage (sync, as backup)
+function saveToLocalStorage(state: GridLayoutState) {
   if (typeof window !== 'undefined' && window.localStorage) {
     localStorage.setItem('audio-prime-grid-layout', JSON.stringify(state));
   }
 }
 
+// Combined save function - saves to both file and localStorage
+function saveToStorage(state: GridLayoutState) {
+  saveToFile(state);
+  saveToLocalStorage(state);
+}
+
 // Create the store
 function createGridLayoutStore() {
-  const { subscribe, set, update } = writable<GridLayoutState>(loadFromStorage());
+  // Start with localStorage data (sync) for immediate rendering
+  const { subscribe, set, update } = writable<GridLayoutState>(loadFromLocalStorage());
+
+  // Then async load from file (preferred) and update store if available
+  if (typeof window !== 'undefined') {
+    loadFromFile().then((fileState) => {
+      if (fileState) {
+        set(fileState);
+        console.log('Layout updated from file storage');
+      }
+    });
+  }
 
   return {
     subscribe,
@@ -322,9 +394,12 @@ function createGridLayoutStore() {
     // Reset to default layout
     reset: () => {
       set(defaultState);
+      // Clear localStorage
       if (typeof window !== 'undefined' && window.localStorage) {
         localStorage.removeItem('audio-prime-grid-layout');
       }
+      // Save default state to file (overwrites existing file)
+      saveToStorage(defaultState);
     },
 
     // Get panel by ID
@@ -498,6 +573,7 @@ export const layoutPresets = derived(gridLayout, $grid => $grid.presets);
 // Derived store for scaled panel layouts (applies scale factors for rendering)
 // Positions stay fixed on grid; only SIZES scale with window
 // Uses uniform scale factor to maintain panel aspect ratios
+// LOCKED panels do NOT scale - they keep their exact stored dimensions
 export const scaledPanelLayouts = derived(gridLayout, $grid => {
   const { scaleX, scaleY, containerWidth, containerHeight } = $grid.scale;
   const minWidthCells = Math.ceil(GRID_CONFIG.minPanelWidth / GRID_CONFIG.cellSize);
@@ -513,6 +589,12 @@ export const scaledPanelLayouts = derived(gridLayout, $grid => {
   const scaledPanels: Record<string, PanelLayout> = {};
 
   for (const [id, panel] of Object.entries($grid.panels)) {
+    // LOCKED panels keep their exact stored dimensions - no scaling
+    if (panel.locked) {
+      scaledPanels[id] = { ...panel };
+      continue;
+    }
+
     // Scale dimensions using uniform scale factor
     const scaledWidth = Math.max(minWidthCells, Math.round(panel.width * uniformScale));
     const scaledHeight = Math.max(minHeightCells, Math.round(panel.height * uniformScale));
