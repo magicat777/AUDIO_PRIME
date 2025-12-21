@@ -35,8 +35,14 @@
 
   // Waterfall spectrogram settings
   const WATERFALL_HISTORY = 150; // Number of history lines to display
-  let waterfallWidth = 0;
-  let waterfallHeight = 0;
+
+  // Fixed internal resolution for high-quality rendering (independent of display size)
+  const WATERFALL_INTERNAL_WIDTH = 800;  // Internal pixel width for frequency resolution
+  const WATERFALL_INTERNAL_HEIGHT = 300; // Internal pixel height for time resolution
+
+  // Use fixed dimensions for consistent quality
+  const waterfallWidth = WATERFALL_INTERNAL_WIDTH;
+  const waterfallHeight = WATERFALL_INTERNAL_HEIGHT;
   let waterfallInitialized = false;
   let waterfallRowImageData: ImageData | null = null; // Reused for performance
 
@@ -168,18 +174,16 @@
       }
     });
 
-    // Handle resize for waterfall canvas
-    const waterfallResizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const { width, height } = entry.contentRect;
-        const dpr = window.devicePixelRatio || 1;
-        waterfallCanvas.width = width * dpr;
-        waterfallCanvas.height = height * dpr;
-        waterfallCtx!.scale(dpr, dpr);
-        waterfallWidth = width;
-        waterfallHeight = height;
-        waterfallInitialized = false; // Reset on resize
-      }
+    // Initialize waterfall canvas at fixed high resolution
+    // CSS will scale it to fit the display area
+    waterfallCanvas.width = WATERFALL_INTERNAL_WIDTH;
+    waterfallCanvas.height = WATERFALL_INTERNAL_HEIGHT;
+    // No dpr scaling needed - we render at fixed resolution and let CSS scale
+
+    // Watch for display resize to reset the waterfall (clears old content on resize)
+    const waterfallResizeObserver = new ResizeObserver(() => {
+      // Only reset initialization flag to redraw labels, don't change canvas size
+      waterfallInitialized = false;
     });
 
     resizeObserver.observe(canvas);
@@ -318,28 +322,26 @@
       ctx.textBaseline = 'top';
       ctx.fillText('BASS DETAIL (20-200Hz)', padding.left, 3);
 
-      // === WATERFALL SPECTROGRAM (Optimized) ===
+      // === WATERFALL SPECTROGRAM (Fixed High-Resolution Rendering) ===
+      // Renders at fixed internal resolution (800x300) for consistent quality
+      // CSS scales the canvas to fit the display area
       if (waterfallCtx && waterfallWidth > 0 && waterfallHeight > 0) {
-        const dpr = window.devicePixelRatio || 1;
         const wfPadding = { left: 45, right: 15, top: 15, bottom: 5 };
         const wfGraphWidth = waterfallWidth - wfPadding.left - wfPadding.right;
         const wfGraphHeight = waterfallHeight - wfPadding.top - wfPadding.bottom;
         const lineHeight = Math.max(1, Math.floor(wfGraphHeight / WATERFALL_HISTORY));
-        const pixelWidth = Math.floor(wfGraphWidth);
 
         // Initialize waterfall on first run or after resize
         if (!waterfallInitialized) {
           waterfallCtx.fillStyle = '#0a0a0f';
           waterfallCtx.fillRect(0, 0, waterfallWidth, waterfallHeight);
 
-          // Pre-allocate ImageData for row rendering
-          const rowWidthPxInit = Math.floor(wfGraphWidth * dpr);
-          const rowHeightPxInit = Math.max(1, Math.floor(lineHeight * dpr));
-          waterfallRowImageData = waterfallCtx.createImageData(rowWidthPxInit, rowHeightPxInit);
+          // Pre-allocate ImageData for row rendering (at fixed resolution)
+          waterfallRowImageData = waterfallCtx.createImageData(wfGraphWidth, lineHeight);
 
           // Draw static labels (only on init/resize)
           waterfallCtx.fillStyle = '#606060';
-          waterfallCtx.font = '9px monospace';
+          waterfallCtx.font = '10px monospace';
           waterfallCtx.textAlign = 'center';
           waterfallCtx.textBaseline = 'top';
 
@@ -364,36 +366,22 @@
         const srcY = wfPadding.top;
         const srcH = wfGraphHeight - lineHeight;
         if (srcH > 0) {
-          // Save the current transform, reset for pixel-perfect copy
-          waterfallCtx.save();
-          waterfallCtx.setTransform(1, 0, 0, 1, 0, 0);
-
-          // Copy existing content down (in device pixels)
-          const srcYPx = Math.floor(srcY * dpr);
-          const dstYPx = Math.floor((srcY + lineHeight) * dpr);
-          const srcHPx = Math.floor(srcH * dpr);
-          const leftPx = Math.floor(wfPadding.left * dpr);
-          const widthPx = Math.floor(wfGraphWidth * dpr);
-
           waterfallCtx.drawImage(
             waterfallCanvas,
-            leftPx, srcYPx, widthPx, srcHPx,  // Source rect
-            leftPx, dstYPx, widthPx, srcHPx   // Dest rect
+            wfPadding.left, srcY, wfGraphWidth, srcH,  // Source rect
+            wfPadding.left, srcY + lineHeight, wfGraphWidth, srcH   // Dest rect
           );
-
-          waterfallCtx.restore();
         }
 
         // Draw only the new top row using ImageData (fast pixel manipulation)
-        // Note: ImageData works in device pixels, ignoring canvas transforms
         if (!waterfallRowImageData) return;
-        const rowWidthPx = waterfallRowImageData.width;
-        const rowHeightPx = waterfallRowImageData.height;
+        const rowWidth = waterfallRowImageData.width;
+        const rowHeight = waterfallRowImageData.height;
         const pixels = waterfallRowImageData.data;
 
-        for (let x = 0; x < rowWidthPx; x++) {
+        for (let x = 0; x < rowWidth; x++) {
           // Map pixel x to frequency bin
-          const binIndex = Math.floor((x / rowWidthPx) * BASS_BAR_COUNT);
+          const binIndex = Math.floor((x / rowWidth) * BASS_BAR_COUNT);
           const barIndex = BASS_START_BAR + binIndex;
           const magnitude = barIndex < spectrum.length ? spectrum[barIndex] : 0;
 
@@ -401,8 +389,8 @@
           const lutIndex = Math.floor(Math.max(0, Math.min(1, magnitude)) * 255) * 4;
 
           // Fill all pixels in this column for the line height
-          for (let y = 0; y < rowHeightPx; y++) {
-            const pixelIndex = (y * rowWidthPx + x) * 4;
+          for (let y = 0; y < rowHeight; y++) {
+            const pixelIndex = (y * rowWidth + x) * 4;
             pixels[pixelIndex] = COLOR_LUT[lutIndex];         // R
             pixels[pixelIndex + 1] = COLOR_LUT[lutIndex + 1]; // G
             pixels[pixelIndex + 2] = COLOR_LUT[lutIndex + 2]; // B
@@ -410,10 +398,8 @@
           }
         }
 
-        // Put the new row at the top of the waterfall area (in device pixels)
-        const leftPx = Math.floor(wfPadding.left * dpr);
-        const topPx = Math.floor(wfPadding.top * dpr);
-        waterfallCtx.putImageData(waterfallRowImageData, leftPx, topPx);
+        // Put the new row at the top of the waterfall area
+        waterfallCtx.putImageData(waterfallRowImageData, wfPadding.left, wfPadding.top);
       }
 
       animationId = requestAnimationFrame(render);

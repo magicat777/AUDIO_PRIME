@@ -10,7 +10,7 @@ import { writable, derived, get } from 'svelte/store';
 // Grid configuration
 export const GRID_CONFIG = {
   cellSize: 20,           // Base grid cell size in pixels
-  snapThreshold: 10,      // Pixels before snap kicks in
+  snapThreshold: 15,      // Pixels before snap kicks in (increased for easier snapping)
   minPanelWidth: 160,     // Minimum panel width (8 cells)
   minPanelHeight: 100,    // Minimum panel height (5 cells)
   gap: 8,                 // Gap between panels in pixels
@@ -19,9 +19,10 @@ export const GRID_CONFIG = {
 
 // Reference dimensions for proportional scaling
 // These represent the "design size" at which default layouts look correct
+// Extended to provide more room at edges for panel snapping
 export const REFERENCE_DIMENSIONS = {
-  width: 1700,   // Reference container width
-  height: 1280,  // Reference container height
+  width: 1760,   // Reference container width (88 cols * 20px)
+  height: 1400,  // Reference container height (70 rows * 20px)
 } as const;
 
 // Scale state for proportional panel scaling
@@ -178,9 +179,10 @@ function createGridLayoutStore() {
     },
 
     // Convert grid dimensions to pixel dimensions
+    // Panels extend to grid lines; gap is handled by panel positioning, not size reduction
     sizeToPixels: (gridWidth: number, gridHeight: number): { width: number; height: number } => ({
-      width: gridWidth * GRID_CONFIG.cellSize - GRID_CONFIG.gap,
-      height: gridHeight * GRID_CONFIG.cellSize - GRID_CONFIG.gap,
+      width: gridWidth * GRID_CONFIG.cellSize,
+      height: gridHeight * GRID_CONFIG.cellSize,
     }),
 
     // Update panel position (during drag)
@@ -189,11 +191,12 @@ function createGridLayoutStore() {
         const panel = state.panels[panelId];
         if (!panel || panel.locked) return state;
 
+        // Always store whole numbers to prevent fractional grid positions
         const newState = {
           ...state,
           panels: {
             ...state.panels,
-            [panelId]: { ...panel, x, y },
+            [panelId]: { ...panel, x: Math.round(x), y: Math.round(y) },
           },
         };
         saveToStorage(newState);
@@ -207,7 +210,7 @@ function createGridLayoutStore() {
         const panel = state.panels[panelId];
         if (!panel || panel.locked) return state;
 
-        // Enforce minimum sizes
+        // Enforce minimum sizes and always store whole numbers
         const minWidthCells = Math.ceil(GRID_CONFIG.minPanelWidth / GRID_CONFIG.cellSize);
         const minHeightCells = Math.ceil(GRID_CONFIG.minPanelHeight / GRID_CONFIG.cellSize);
 
@@ -217,8 +220,8 @@ function createGridLayoutStore() {
             ...state.panels,
             [panelId]: {
               ...panel,
-              width: Math.max(minWidthCells, width),
-              height: Math.max(minHeightCells, height),
+              width: Math.round(Math.max(minWidthCells, width)),
+              height: Math.round(Math.max(minHeightCells, height)),
             },
           },
         };
@@ -479,11 +482,15 @@ export const scaleState = derived(gridLayout, $grid => $grid.scale);
 export const layoutPresets = derived(gridLayout, $grid => $grid.presets);
 
 // Derived store for scaled panel layouts (applies scale factors for rendering)
-// Clamps panels to fit within the visible container bounds
+// Positions stay fixed on grid; only SIZES scale with window
+// Uses uniform scale factor to maintain panel aspect ratios
 export const scaledPanelLayouts = derived(gridLayout, $grid => {
   const { scaleX, scaleY, containerWidth, containerHeight } = $grid.scale;
   const minWidthCells = Math.ceil(GRID_CONFIG.minPanelWidth / GRID_CONFIG.cellSize);
   const minHeightCells = Math.ceil(GRID_CONFIG.minPanelHeight / GRID_CONFIG.cellSize);
+
+  // Use uniform scale (minimum) to keep panels proportional
+  const uniformScale = Math.min(scaleX, scaleY);
 
   // Calculate available grid cells based on current container size
   const maxGridX = Math.floor((containerWidth - GRID_CONFIG.padding * 2) / GRID_CONFIG.cellSize);
@@ -492,28 +499,26 @@ export const scaledPanelLayouts = derived(gridLayout, $grid => {
   const scaledPanels: Record<string, PanelLayout> = {};
 
   for (const [id, panel] of Object.entries($grid.panels)) {
-    // Scale dimensions first
-    const scaledWidth = Math.max(minWidthCells, Math.round(panel.width * scaleX));
-    const scaledHeight = Math.max(minHeightCells, Math.round(panel.height * scaleY));
+    // Scale dimensions using uniform scale factor
+    const scaledWidth = Math.max(minWidthCells, Math.round(panel.width * uniformScale));
+    const scaledHeight = Math.max(minHeightCells, Math.round(panel.height * uniformScale));
 
-    // Scale positions
-    let scaledX = Math.round(panel.x * scaleX);
-    let scaledY = Math.round(panel.y * scaleY);
+    // Positions stay fixed (no scaling) - panels stay on their grid positions
+    let x = panel.x;
+    let y = panel.y;
 
     // Clamp positions so panels don't extend beyond visible bounds
-    // Ensure panel doesn't extend past right edge
-    if (scaledX + scaledWidth > maxGridX) {
-      scaledX = Math.max(0, maxGridX - scaledWidth);
+    if (x + scaledWidth > maxGridX) {
+      x = Math.max(0, maxGridX - scaledWidth);
     }
-    // Ensure panel doesn't extend past bottom edge
-    if (scaledY + scaledHeight > maxGridY) {
-      scaledY = Math.max(0, maxGridY - scaledHeight);
+    if (y + scaledHeight > maxGridY) {
+      y = Math.max(0, maxGridY - scaledHeight);
     }
 
     scaledPanels[id] = {
       ...panel,
-      x: scaledX,
-      y: scaledY,
+      x,
+      y,
       width: scaledWidth,
       height: scaledHeight,
     };

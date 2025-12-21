@@ -10,7 +10,8 @@
   $: gridVisible = $gridLayout.gridVisible;
   $: snapEnabled = $gridLayout.snapEnabled;
 
-  // Calculate grid line counts
+  // Grid uses fixed cell size - always square
+  // Panel sizes scale with window, but positions stay on this fixed grid
   $: columns = Math.floor((containerWidth - GRID_CONFIG.padding * 2) / GRID_CONFIG.cellSize);
   $: rows = Math.floor((containerHeight - GRID_CONFIG.padding * 2) / GRID_CONFIG.cellSize);
 
@@ -90,7 +91,7 @@
   class="grid-layout-container"
   class:grid-visible={gridVisible}
 >
-  <!-- Grid overlay (rendered when visible) -->
+  <!-- Grid overlay (rendered when visible) - fixed 20px square grid -->
   {#if gridVisible}
     <svg class="grid-overlay" aria-hidden="true">
       <!-- Vertical lines -->
@@ -155,12 +156,13 @@
   }
 
   .grid-line {
-    stroke: rgba(255, 255, 255, 0.04);
+    stroke: rgba(100, 120, 140, 0.25);
     stroke-width: 1;
   }
 
   .grid-line-major {
-    stroke: rgba(255, 255, 255, 0.08);
+    stroke: rgba(100, 150, 200, 0.4);
+    stroke-width: 1;
   }
 
   .panels-container {

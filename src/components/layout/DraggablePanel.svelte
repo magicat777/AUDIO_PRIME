@@ -37,21 +37,12 @@
     if (!panelElement || !panel) return;
 
     // Initialize interact.js
+    // Note: We don't use interact.js snap modifiers because they don't support
+    // dynamic cell sizes needed for scaling. Instead, we snap manually in end handlers.
     interactable = interact(panelElement)
       .draggable({
         inertia: false,
-        modifiers: snapEnabled ? [
-          interact.modifiers.snap({
-            targets: [
-              interact.snappers.grid({
-                x: GRID_CONFIG.cellSize,
-                y: GRID_CONFIG.cellSize,
-              }),
-            ],
-            range: GRID_CONFIG.snapThreshold,
-            relativePoints: [{ x: 0, y: 0 }],
-          }),
-        ] : [],
+        modifiers: [], // Manual snap in end handler
         autoScroll: false,
         // Use the drag handle, not the entire panel
         allowFrom: '.drag-handle',
@@ -80,52 +71,41 @@
             gridLayout.setActivePanel(null);
             panelElement.style.willChange = '';
 
-            // Calculate final grid position
+            // Calculate final pixel position
             const target = event.target as HTMLElement;
-            const x = parseFloat(target.getAttribute('data-x') || '0');
-            const y = parseFloat(target.getAttribute('data-y') || '0');
+            const dragX = parseFloat(target.getAttribute('data-x') || '0');
+            const dragY = parseFloat(target.getAttribute('data-y') || '0');
 
-            // Convert to scaled grid coordinates
-            const scaledGridPos = gridLayout.pixelsToGrid(
-              pixelPos.x + x,
-              pixelPos.y + y,
-              snapEnabled
-            );
+            // Final pixel position after drag
+            const finalPixelX = pixelPos.x + dragX;
+            const finalPixelY = pixelPos.y + dragY;
 
-            // Convert back to reference coordinates by dividing by scale factors
-            const { scaleX, scaleY } = scale;
-            const refGridX = scaleX > 0 ? Math.round(scaledGridPos.x / scaleX) : scaledGridPos.x;
-            const refGridY = scaleY > 0 ? Math.round(scaledGridPos.y / scaleY) : scaledGridPos.y;
+            // Use fixed grid cell size (positions are not scaled)
+            const cellSize = GRID_CONFIG.cellSize;
+
+            // Convert to grid coordinates and snap if enabled
+            let gridX = (finalPixelX - GRID_CONFIG.padding) / cellSize;
+            let gridY = (finalPixelY - GRID_CONFIG.padding) / cellSize;
+
+            if (snapEnabled) {
+              gridX = Math.round(gridX);
+              gridY = Math.round(gridY);
+            }
 
             // Reset transform and update actual position
             target.style.transform = '';
             target.removeAttribute('data-x');
             target.removeAttribute('data-y');
 
-            // Update store with reference coordinates (this triggers reactive update)
-            gridLayout.updatePosition(panelId, Math.max(0, refGridX), Math.max(0, refGridY));
+            // Update store with grid coordinates
+            gridLayout.updatePosition(panelId, Math.max(0, Math.round(gridX)), Math.max(0, Math.round(gridY)));
           },
         },
       })
       .resizable({
         edges: { left: false, right: true, bottom: true, top: false },
-        modifiers: snapEnabled ? [
-          interact.modifiers.snap({
-            targets: [
-              interact.snappers.grid({
-                x: GRID_CONFIG.cellSize,
-                y: GRID_CONFIG.cellSize,
-              }),
-            ],
-            range: GRID_CONFIG.snapThreshold,
-          }),
-          interact.modifiers.restrictSize({
-            min: {
-              width: GRID_CONFIG.minPanelWidth,
-              height: GRID_CONFIG.minPanelHeight,
-            },
-          }),
-        ] : [
+        modifiers: [
+          // Only restrict minimum size; snap is handled manually in end handler
           interact.modifiers.restrictSize({
             min: {
               width: GRID_CONFIG.minPanelWidth,
@@ -153,16 +133,38 @@
             gridLayout.setActivePanel(null);
             panelElement.style.willChange = '';
 
-            // Convert to scaled grid cells
-            const scaledWidth = Math.round((event.rect.width + GRID_CONFIG.gap) / GRID_CONFIG.cellSize);
-            const scaledHeight = Math.round((event.rect.height + GRID_CONFIG.gap) / GRID_CONFIG.cellSize);
+            const cellSize = GRID_CONFIG.cellSize;
+            const padding = GRID_CONFIG.padding;
 
-            // Convert back to reference coordinates by dividing by scale factors
+            // Get the panel's current grid position
+            const panelGridX = panel?.x ?? 0;
+            const panelGridY = panel?.y ?? 0;
+
+            // Calculate new size directly from pixel dimensions
+            // Panel width in pixels = cells * cellSize (no gap subtraction anymore)
+            // So: cells = pixelWidth / cellSize
+            let newWidthCells = event.rect.width / cellSize;
+            let newHeightCells = event.rect.height / cellSize;
+
+            if (snapEnabled) {
+              // Snap to full grid cells
+              newWidthCells = Math.round(newWidthCells);
+              newHeightCells = Math.round(newHeightCells);
+            }
+
+            // Ensure minimum size
+            newWidthCells = Math.max(1, Math.round(newWidthCells));
+            newHeightCells = Math.max(1, Math.round(newHeightCells));
+
+            // Convert displayed size back to reference size
             const { scaleX, scaleY } = scale;
-            const refWidth = scaleX > 0 ? Math.round(scaledWidth / scaleX) : scaledWidth;
-            const refHeight = scaleY > 0 ? Math.round(scaledHeight / scaleY) : scaledHeight;
+            const uniformScale = Math.min(scaleX, scaleY);
 
-            gridLayout.updateSize(panelId, refWidth, refHeight);
+            const refWidth = uniformScale > 0 ? Math.round(newWidthCells / uniformScale) : newWidthCells;
+            const refHeight = uniformScale > 0 ? Math.round(newHeightCells / uniformScale) : newHeightCells;
+
+            // Update store with reference grid cell dimensions
+            gridLayout.updateSize(panelId, Math.max(1, refWidth), Math.max(1, refHeight));
           },
         },
       });
