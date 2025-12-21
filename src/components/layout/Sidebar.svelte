@@ -12,10 +12,12 @@
   let devices: AudioDevice[] = [];
   let selectedDeviceId: string | null = null;
 
-  // Accordion state for audio sources and modules
+  // Accordion state for audio sources, modules, layout, and presets
   let monitorsExpanded = true;
   let inputsExpanded = true;
   let modulesExpanded = true;
+  let layoutExpanded = true;
+  let presetsExpanded = true;
 
   // Check if all panels are locked
   $: allLocked = Object.values($gridLayout.panels).every(p => p.locked);
@@ -307,84 +309,98 @@
 
     <section class="section">
       <h3>Layout</h3>
-      <div class="layout-controls">
+      <div class="accordion-section">
         <button
-          class="layout-btn"
-          class:active={allLocked}
-          on:click={() => allLocked ? gridLayout.unlockAll() : gridLayout.lockAll()}
+          class="accordion-header"
+          class:expanded={layoutExpanded}
+          on:click={() => layoutExpanded = !layoutExpanded}
         >
-          <span class="lock-icon">{allLocked ? '🔓' : '🔒'}</span>
-          <span>{allLocked ? 'Unlock All Panels' : 'Lock All Panels'}</span>
+          <svg class="accordion-icon" width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+            <path d="M4 2l4 4-4 4" stroke="currentColor" stroke-width="2" fill="none"/>
+          </svg>
+          <span class="accordion-title">Layout Controls</span>
         </button>
-        <button class="layout-btn" on:click={() => gridLayout.toggleGrid()}>
-          <span class="grid-icon">⊞</span>
-          <span>Toggle Grid</span>
-          {#if $gridLayout.gridVisible}
-            <span class="badge active">ON</span>
-          {/if}
-        </button>
-        <button class="layout-btn" on:click={() => gridLayout.toggleSnap()}>
-          <span class="snap-icon">⊡</span>
-          <span>Snap to Grid</span>
-          {#if $gridLayout.snapEnabled}
-            <span class="badge active">ON</span>
-          {/if}
-        </button>
-        <button class="layout-btn" on:click={handleAutoArrange}>
-          <span class="arrange-icon">⊞</span>
-          <span>Auto-Arrange</span>
-        </button>
-        <button class="layout-btn danger" on:click={() => gridLayout.reset()}>
-          <span class="reset-icon">↺</span>
-          <span>Reset Layout</span>
-        </button>
+        {#if layoutExpanded}
+          <div class="accordion-content">
+            <button class="module-item" class:active={allLocked} on:click={() => allLocked ? gridLayout.unlockAll() : gridLayout.lockAll()}>
+              <span class="module-name">{allLocked ? 'Unlock All Panels' : 'Lock All Panels'}</span>
+              <span class="led-indicator" class:on={allLocked}></span>
+            </button>
+            <button class="module-item" class:active={$gridLayout.gridVisible} on:click={() => gridLayout.toggleGrid()}>
+              <span class="module-name">Toggle Grid</span>
+              <span class="led-indicator" class:on={$gridLayout.gridVisible}></span>
+            </button>
+            <button class="module-item" class:active={$gridLayout.snapEnabled} on:click={() => gridLayout.toggleSnap()}>
+              <span class="module-name">Snap to Grid</span>
+              <span class="led-indicator" class:on={$gridLayout.snapEnabled}></span>
+            </button>
+            <button class="module-item" on:click={handleAutoArrange}>
+              <span class="module-name">Auto-Arrange</span>
+            </button>
+            <button class="module-item danger" on:click={() => gridLayout.reset()}>
+              <span class="module-name">Reset Layout</span>
+            </button>
+          </div>
+        {/if}
       </div>
     </section>
 
     <section class="section">
       <h3>Layout Presets</h3>
-      <div class="presets-container">
-        {#if $layoutPresets.length > 0}
-          <div class="preset-list">
-            {#each $layoutPresets as preset, index}
-              <div class="preset-item">
-                <button class="preset-load-btn" on:click={() => handleLoadPreset(index)} title="Load preset">
-                  <span class="preset-name">{preset.name}</span>
-                </button>
-                <button class="preset-delete-btn" on:click={() => handleDeletePreset(index)} title="Delete preset">
-                  ×
-                </button>
-              </div>
-            {/each}
-          </div>
-        {:else}
-          <p class="no-presets">No saved presets</p>
-        {/if}
-
-        {#if showSavePreset}
-          <div class="save-preset-form">
-            <input
-              type="text"
-              bind:value={newPresetName}
-              placeholder="Preset name"
-              class="preset-input"
-              on:keydown={(e) => e.key === 'Enter' && handleSavePreset()}
-            />
-            <button class="preset-save-btn" on:click={handleSavePreset}>Save</button>
-            <button class="preset-cancel-btn" on:click={() => showSavePreset = false}>Cancel</button>
-          </div>
-        {:else}
-          <button
-            class="layout-btn"
-            on:click={() => showSavePreset = true}
-            disabled={$layoutPresets.length >= 5}
-          >
-            <span class="save-icon">💾</span>
-            <span>Save Current Layout</span>
-            {#if $layoutPresets.length >= 5}
-              <span class="badge">MAX</span>
+      <div class="accordion-section">
+        <button
+          class="accordion-header"
+          class:expanded={presetsExpanded}
+          on:click={() => presetsExpanded = !presetsExpanded}
+        >
+          <svg class="accordion-icon" width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+            <path d="M4 2l4 4-4 4" stroke="currentColor" stroke-width="2" fill="none"/>
+          </svg>
+          <span class="accordion-title">Saved Presets</span>
+          <span class="device-count">{$layoutPresets.length}/5</span>
+        </button>
+        {#if presetsExpanded}
+          <div class="accordion-content">
+            {#if $layoutPresets.length > 0}
+              {#each $layoutPresets as preset, index}
+                <div class="preset-item">
+                  <button class="module-item preset-load" on:click={() => handleLoadPreset(index)} title="Load preset">
+                    <span class="module-name">{preset.name}</span>
+                  </button>
+                  <button class="preset-delete-btn" on:click={() => handleDeletePreset(index)} title="Delete preset">
+                    ×
+                  </button>
+                </div>
+              {/each}
+            {:else}
+              <p class="no-presets">No saved presets</p>
             {/if}
-          </button>
+
+            {#if showSavePreset}
+              <div class="save-preset-form">
+                <input
+                  type="text"
+                  bind:value={newPresetName}
+                  placeholder="Preset name"
+                  class="preset-input"
+                  on:keydown={(e) => e.key === 'Enter' && handleSavePreset()}
+                />
+                <button class="preset-save-btn" on:click={handleSavePreset}>Save</button>
+                <button class="preset-cancel-btn" on:click={() => showSavePreset = false}>Cancel</button>
+              </div>
+            {:else}
+              <button
+                class="module-item save-preset-btn"
+                on:click={() => showSavePreset = true}
+                disabled={$layoutPresets.length >= 5}
+              >
+                <span class="module-name">Save Current Layout</span>
+                {#if $layoutPresets.length >= 5}
+                  <span class="badge-small">MAX</span>
+                {/if}
+              </button>
+            {/if}
+          </div>
         {/if}
       </div>
     </section>
@@ -574,6 +590,20 @@
     box-shadow: 0 0 6px var(--meter-green);
   }
 
+  .module-item.danger:hover {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--meter-red);
+  }
+
+  .module-item.preset-load {
+    flex: 1;
+  }
+
+  .module-item.save-preset-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .badge {
     font-size: 0.65rem;
     padding: 0.15rem 0.4rem;
@@ -581,6 +611,14 @@
     border-radius: 2px;
     color: var(--text-muted);
     margin-left: auto;
+  }
+
+  .badge-small {
+    font-size: 0.6rem;
+    padding: 0.1rem 0.3rem;
+    background: rgba(239, 68, 68, 0.2);
+    border-radius: 2px;
+    color: var(--meter-red);
   }
 
   .shortcuts {
@@ -830,31 +868,8 @@
     gap: 0.25rem;
   }
 
-  .preset-load-btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    padding: 0.4rem 0.75rem;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    color: var(--text-secondary);
-    font-size: 0.8rem;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    text-align: left;
-  }
-
-  .preset-load-btn:hover {
-    background: rgba(74, 158, 255, 0.1);
-    border-color: var(--accent-color);
-    color: var(--text-primary);
-  }
-
-  .preset-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .preset-item .module-item {
+    border-radius: 4px 0 0 4px;
   }
 
   .preset-delete-btn {
