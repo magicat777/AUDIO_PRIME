@@ -421,7 +421,7 @@
       // Renders at fixed internal resolution (800x300) for consistent quality
       // CSS scales the canvas to fit the display area
       if (waterfallCtx && waterfallWidth > 0 && waterfallHeight > 0) {
-        const wfPadding = { left: 45, right: 15, top: 15, bottom: 5 };
+        const wfPadding = { left: 55, right: 15, top: 22, bottom: 8 };
         const wfGraphWidth = waterfallWidth - wfPadding.left - wfPadding.right;
         const wfGraphHeight = waterfallHeight - wfPadding.top - wfPadding.bottom;
         const lineHeight = Math.max(1, Math.floor(wfGraphHeight / WATERFALL_HISTORY));
@@ -435,23 +435,27 @@
           waterfallRowImageData = waterfallCtx.createImageData(wfGraphWidth, lineHeight);
 
           // Draw static labels (only on init/resize)
-          waterfallCtx.fillStyle = '#606060';
-          waterfallCtx.font = '10px monospace';
+          // Use larger font sizes since canvas is at fixed internal resolution (800x300)
+          // and CSS scales it to display size
+          waterfallCtx.fillStyle = '#808080';
+          waterfallCtx.font = '18px monospace';
           waterfallCtx.textAlign = 'center';
           waterfallCtx.textBaseline = 'top';
 
           const wfFreqLabels = [20, 40, 60, 100, 150, 200];
           for (const freq of wfFreqLabels) {
             const x = wfPadding.left + (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * wfGraphWidth;
-            waterfallCtx.fillText(`${freq}`, x, 2);
+            waterfallCtx.fillText(`${freq}`, x, 0);
           }
 
-          // Time indicators
-          waterfallCtx.fillStyle = '#505050';
+          // Time indicators on left side
+          waterfallCtx.fillStyle = '#707070';
+          waterfallCtx.font = '16px monospace';
           waterfallCtx.textAlign = 'right';
-          waterfallCtx.textBaseline = 'middle';
-          waterfallCtx.fillText('now', wfPadding.left - 3, wfPadding.top + 5);
-          waterfallCtx.fillText(`-${Math.round(WATERFALL_HISTORY / 60)}s`, wfPadding.left - 3, waterfallHeight - wfPadding.bottom - 5);
+          waterfallCtx.textBaseline = 'top';
+          waterfallCtx.fillText('now', wfPadding.left - 5, wfPadding.top);
+          waterfallCtx.textBaseline = 'bottom';
+          waterfallCtx.fillText(`-${Math.round(WATERFALL_HISTORY / 60)}s`, wfPadding.left - 5, waterfallHeight - wfPadding.bottom);
 
           waterfallInitialized = true;
         }
