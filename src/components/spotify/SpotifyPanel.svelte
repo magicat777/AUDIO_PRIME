@@ -2,14 +2,20 @@
   import { onMount, onDestroy } from 'svelte';
   import { spotifyService } from '../../core/SpotifyService';
   import type { SpotifyAuthStatus, SpotifyNowPlaying } from '../../core/SpotifyService';
+  import { renderCoordinator } from '../../core/RenderCoordinator';
+  import { moduleVisibility } from '../../stores/moduleVisibility';
+
+  const RENDER_ID = 'spotify-panel';
 
   // Subscribed state
   let authStatus: SpotifyAuthStatus = { connected: false, connecting: false };
   let nowPlaying: SpotifyNowPlaying = { isPlaying: false, track: null };
 
-  // Animation frame for smooth progress updates
-  let animationId: number | null = null;
+  // Display progress
   let displayProgress = 0;
+
+  // Sync visibility with RenderCoordinator
+  $: renderCoordinator.setVisibility(RENDER_ID, $moduleVisibility.spotify);
 
   // Subscribe to stores
   const unsubAuth = spotifyService.authStatus.subscribe(value => {
@@ -28,7 +34,6 @@
     if (nowPlaying.isPlaying && nowPlaying.track) {
       displayProgress = Math.min(displayProgress + 16.67, nowPlaying.track.durationMs); // ~60fps
     }
-    animationId = requestAnimationFrame(updateProgress);
   }
 
   // Format time as MM:SS
@@ -74,15 +79,14 @@
 
   onMount(() => {
     spotifyService.initialize();
-    animationId = requestAnimationFrame(updateProgress);
+    // Register with centralized render coordinator (low priority)
+    renderCoordinator.register(RENDER_ID, updateProgress, 'low');
   });
 
   onDestroy(() => {
     unsubAuth();
     unsubNowPlaying();
-    if (animationId) {
-      cancelAnimationFrame(animationId);
-    }
+    renderCoordinator.unregister(RENDER_ID);
   });
 </script>
 

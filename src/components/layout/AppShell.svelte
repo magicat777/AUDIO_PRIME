@@ -20,10 +20,12 @@
   import { audioEngine } from '../../core/AudioEngine';
   import { moduleVisibility } from '../../stores/moduleVisibility';
   import { gridLayout } from '../../stores/gridLayout';
+  import { renderCoordinator } from '../../core/RenderCoordinator';
+
+  const RENDER_ID = 'app-shell-lufs';
 
   let sidebarOpen = false;
   let isCapturing = false;
-  let lufsAnimationId: number | null = null;
   let isFullscreen = false;
   let fullscreenCleanup: (() => void) | null = null;
 
@@ -62,7 +64,7 @@
     isCapturing = state.isCapturing;
   });
 
-  // Update LUFS data using requestAnimationFrame for Svelte 5 reactivity
+  // Update LUFS data using RenderCoordinator for Svelte 5 reactivity
   function updateLUFSData() {
     const data = get(audioEngine.loudness);
     momentary = data.momentary;
@@ -71,7 +73,6 @@
     range = data.range;
     truePeak = data.truePeak;
     frameCount++;  // Trigger reactive update
-    lufsAnimationId = requestAnimationFrame(updateLUFSData);
   }
 
   function toggleSidebar() {
@@ -149,8 +150,8 @@
 
   onMount(() => {
     window.addEventListener('keydown', handleKeydown);
-    // Start LUFS update loop
-    lufsAnimationId = requestAnimationFrame(updateLUFSData);
+    // Register LUFS update with centralized render coordinator
+    renderCoordinator.register(RENDER_ID, updateLUFSData, 'low');
 
     // Listen for fullscreen changes to auto-arrange panels
     fullscreenCleanup = window.electronAPI?.window.onFullscreenChange((newFullscreen: boolean) => {
@@ -184,9 +185,7 @@
   });
 
   onDestroy(() => {
-    if (lufsAnimationId !== null) {
-      cancelAnimationFrame(lufsAnimationId);
-    }
+    renderCoordinator.unregister(RENDER_ID);
   });
 </script>
 

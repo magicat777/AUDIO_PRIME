@@ -3,6 +3,10 @@
   import { get } from 'svelte/store';
   import { audioEngine } from '../../core/AudioEngine';
   import type { StereoAnalysisData } from '../../core/AudioEngine';
+  import { renderCoordinator } from '../../core/RenderCoordinator';
+  import { moduleVisibility } from '../../stores/moduleVisibility';
+
+  const RENDER_ID = 'stereo-correlation-panel';
 
   // Display values with smoothing
   let correlation = 0;
@@ -17,8 +21,8 @@
   let smoothedWidth = 0;
   let smoothedBalance = 0;
 
-  // Animation frame tracking
-  let animationId: number | null = null;
+  // Sync visibility with RenderCoordinator
+  $: renderCoordinator.setVisibility(RENDER_ID, $moduleVisibility.stereoCorrelation);
 
   // Reactive trigger for Svelte 5
   let frameCount = 0;
@@ -43,17 +47,15 @@
     smoothedBalance = smoothedBalance * SMOOTHING + balance * (1 - SMOOTHING);
 
     frameCount++;
-    animationId = requestAnimationFrame(updateDisplay);
   }
 
   onMount(() => {
-    animationId = requestAnimationFrame(updateDisplay);
+    // Register with centralized render coordinator (low priority for non-visual updates)
+    renderCoordinator.register(RENDER_ID, updateDisplay, 'low');
   });
 
   onDestroy(() => {
-    if (animationId !== null) {
-      cancelAnimationFrame(animationId);
-    }
+    renderCoordinator.unregister(RENDER_ID);
   });
 
   // Correlation color: green = good (+1), yellow = wide (0), red = out of phase (-1)

@@ -2,6 +2,13 @@
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import { audioEngine } from '../../core/AudioEngine';
+  import { renderCoordinator } from '../../core/RenderCoordinator';
+  import { moduleVisibility } from '../../stores/moduleVisibility';
+
+  const RENDER_ID = 'meter-panel';
+
+  // Sync visibility with RenderCoordinator
+  $: renderCoordinator.setVisibility(RENDER_ID, $moduleVisibility.vuMeters);
 
   // Display mode: 'horizontal' or 'vertical'
   type DisplayMode = 'horizontal' | 'vertical';
@@ -36,7 +43,6 @@
 
   // Animation frame tracking
   let lastTime = performance.now();
-  let animationId: number | null = null;
 
   // Crest factor tracking
   let crestFactorL = 0;
@@ -110,20 +116,15 @@
       const newCrestR = peakHoldR - rawRightLevel;
       crestFactorR = crestFactorR * 0.9 + newCrestR * 0.1; // Smooth
     }
-
-    // Continue animation loop
-    animationId = requestAnimationFrame(updateMeters);
   }
 
   onMount(() => {
-    // Start animation loop
-    animationId = requestAnimationFrame(updateMeters);
+    // Register with centralized render coordinator (high priority for VU meters)
+    renderCoordinator.register(RENDER_ID, updateMeters, 'high');
   });
 
   onDestroy(() => {
-    if (animationId !== null) {
-      cancelAnimationFrame(animationId);
-    }
+    renderCoordinator.unregister(RENDER_ID);
   });
 
   function dbToPercent(db: number): number {

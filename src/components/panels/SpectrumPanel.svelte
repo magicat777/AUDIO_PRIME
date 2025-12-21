@@ -3,14 +3,17 @@
   import { audioEngine } from '../../core/AudioEngine';
   import type { FFTMode } from '../../core/AudioEngine';
   import { SpectrumRenderer } from '../../rendering/renderers/SpectrumRenderer';
+  import { renderCoordinator } from '../../core/RenderCoordinator';
+  import { moduleVisibility } from '../../stores/moduleVisibility';
   import ScaleOverlay from './ScaleOverlay.svelte';
+
+  const RENDER_ID = 'spectrum-panel';
 
   let canvas: HTMLCanvasElement;
   let peakCanvas: HTMLCanvasElement;
   let container: HTMLDivElement;
   let renderer: SpectrumRenderer | null = null;
   let peakCtx: CanvasRenderingContext2D | null = null;
-  let animationId: number | null = null;
   let spectrumStandard = new Float32Array(512);
   let spectrumMultiRes = new Float32Array(512);
   let fftMode: FFTMode = 'standard';
@@ -40,6 +43,9 @@
 
   // Get current spectrum based on mode
   $: currentSpectrum = fftMode === 'standard' ? spectrumStandard : spectrumMultiRes;
+
+  // Sync visibility with RenderCoordinator
+  $: renderCoordinator.setVisibility(RENDER_ID, $moduleVisibility.spectrum);
 
   // Toggle FFT mode
   function toggleMode() {
@@ -194,13 +200,11 @@
 
     resizeObserver.observe(container);
 
-    // Start render loop
-    function render() {
+    // Register with centralized render coordinator (high priority for main spectrum)
+    renderCoordinator.register(RENDER_ID, () => {
       renderer?.render(currentSpectrum);
       drawPeakHold();
-      animationId = requestAnimationFrame(render);
-    }
-    render();
+    }, 'high');
 
     return () => {
       resizeObserver.disconnect();
@@ -211,9 +215,7 @@
     unsubStandard();
     unsubMultiRes();
     unsubState();
-    if (animationId !== null) {
-      cancelAnimationFrame(animationId);
-    }
+    renderCoordinator.unregister(RENDER_ID);
     renderer?.destroy();
   });
 </script>

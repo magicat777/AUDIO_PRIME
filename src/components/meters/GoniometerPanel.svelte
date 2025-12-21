@@ -2,11 +2,14 @@
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import { audioEngine } from '../../core/AudioEngine';
+  import { renderCoordinator } from '../../core/RenderCoordinator';
+  import { moduleVisibility } from '../../stores/moduleVisibility';
+
+  const RENDER_ID = 'goniometer-panel';
 
   let canvas: HTMLCanvasElement;
   let container: HTMLDivElement;
   let ctx: CanvasRenderingContext2D | null = null;
-  let animationId: number | null = null;
 
   // Display mode: 'gonio' for M/S Lissajous, 'vector' for raw L/R XY, 'polar' for polar diagram
   type DisplayMode = 'gonio' | 'vector' | 'polar';
@@ -29,6 +32,9 @@
   // Reactive labels (Svelte needs reactive statements, not functions, for template updates)
   $: modeLabel = displayMode === 'gonio' ? 'GONIO' : displayMode === 'vector' ? 'VECT' : 'POLAR';
   $: panelTitle = displayMode === 'gonio' ? 'GONIOMETER' : displayMode === 'vector' ? 'VECTORSCOPE' : 'POLAR SCOPE';
+
+  // Sync visibility with RenderCoordinator
+  $: renderCoordinator.setVisibility(RENDER_ID, $moduleVisibility.goniometer);
 
   // Persistence buffer for phosphor-like effect
   let persistenceBuffer: ImageData | null = null;
@@ -77,14 +83,12 @@
     });
     resizeObserver.observe(container);
 
-    // Start render loop
-    animationId = requestAnimationFrame(render);
+    // Register with centralized render coordinator
+    renderCoordinator.register(RENDER_ID, render, 'normal');
   });
 
   onDestroy(() => {
-    if (animationId !== null) {
-      cancelAnimationFrame(animationId);
-    }
+    renderCoordinator.unregister(RENDER_ID);
     if (resizeObserver) {
       resizeObserver.disconnect();
     }
@@ -92,7 +96,6 @@
 
   function render() {
     if (!ctx || !persistenceBuffer) {
-      animationId = requestAnimationFrame(render);
       return;
     }
 
@@ -330,8 +333,6 @@
         ctx.stroke();
       }
     }
-
-    animationId = requestAnimationFrame(render);
   }
 </script>
 

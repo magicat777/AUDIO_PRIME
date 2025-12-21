@@ -2,13 +2,15 @@
   import { onMount, onDestroy } from 'svelte';
   import { audioEngine } from '../../core/AudioEngine';
   import { moduleVisibility } from '../../stores/moduleVisibility';
+  import { renderCoordinator } from '../../core/RenderCoordinator';
+
+  const RENDER_ID = 'bass-detail-panel';
 
   let canvas: HTMLCanvasElement;
   let waterfallCanvas: HTMLCanvasElement;
   let bassGraphContainer: HTMLDivElement;
   let ctx: CanvasRenderingContext2D | null = null;
   let waterfallCtx: CanvasRenderingContext2D | null = null;
-  let animationId: number | null = null;
   let spectrum = new Float32Array(512);
 
   // Display mode: 'curve' for continuous line, 'bars' for discrete bars
@@ -123,6 +125,9 @@
   const unsubscribe = audioEngine.spectrum.subscribe((data) => {
     spectrum = data;
   });
+
+  // Sync visibility with RenderCoordinator
+  $: renderCoordinator.setVisibility(RENDER_ID, $moduleVisibility.bassDetail);
 
   // Frequency cursor handlers
   const padding = { left: 45, right: 15, top: 20, bottom: 30 };
@@ -480,10 +485,10 @@
         waterfallCtx.putImageData(waterfallRowImageData, wfPadding.left, wfPadding.top);
       }
 
-      animationId = requestAnimationFrame(render);
     }
 
-    render();
+    // Register with centralized render coordinator
+    renderCoordinator.register(RENDER_ID, render, 'normal');
 
     return () => {
       resizeObserver.disconnect();
@@ -493,9 +498,7 @@
 
   onDestroy(() => {
     unsubscribe();
-    if (animationId !== null) {
-      cancelAnimationFrame(animationId);
-    }
+    renderCoordinator.unregister(RENDER_ID);
   });
 </script>
 
