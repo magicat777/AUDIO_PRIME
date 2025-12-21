@@ -230,17 +230,17 @@
     justify-content: center;
     width: 32px;
     height: 32px;
-    background: transparent;
-    border: 1px solid var(--border-color);
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid var(--error-color);
     border-radius: 4px;
-    color: var(--text-muted);
+    color: var(--error-color);
     cursor: pointer;
     transition: all var(--transition-fast);
     margin-left: 0.5rem;
   }
 
   .power-button:hover {
-    background: rgba(239, 68, 68, 0.15);
+    background: rgba(239, 68, 68, 0.3);
     border-color: var(--error-color);
     color: var(--error-color);
   }
