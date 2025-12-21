@@ -27,12 +27,16 @@
     // Initial size
     containerWidth = containerElement.clientWidth;
     containerHeight = containerElement.clientHeight;
+    // Update store with initial container size for proportional scaling
+    gridLayout.setContainerSize(containerWidth, containerHeight);
 
     // Watch for resize
     resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         containerWidth = entry.contentRect.width;
         containerHeight = entry.contentRect.height;
+        // Update store for proportional panel scaling
+        gridLayout.setContainerSize(containerWidth, containerHeight);
       }
     });
     resizeObserver.observe(containerElement);

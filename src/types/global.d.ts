@@ -75,6 +75,8 @@ export interface ElectronAPI {
   };
   window: {
     toggleFullscreen: () => Promise<boolean>;
+    quit: () => Promise<void>;
+    onFullscreenChange: (callback: (isFullscreen: boolean) => void) => () => void;
   };
   system: {
     getMetrics: () => Promise<SystemMetrics>;

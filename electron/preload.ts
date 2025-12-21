@@ -76,6 +76,8 @@ export interface ElectronAPI {
   };
   window: {
     toggleFullscreen: () => Promise<boolean>;
+    quit: () => Promise<void>;
+    onFullscreenChange: (callback: (isFullscreen: boolean) => void) => () => void;
   };
   system: {
     getMetrics: () => Promise<SystemMetrics>;
@@ -118,6 +120,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   window: {
     toggleFullscreen: () => ipcRenderer.invoke('window:fullscreen'),
+    quit: () => ipcRenderer.invoke('window:quit'),
+    onFullscreenChange: (callback: (isFullscreen: boolean) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, isFullscreen: boolean) => {
+        callback(isFullscreen);
+      };
+      ipcRenderer.on('window:fullscreen-change', listener);
+      return () => {
+        ipcRenderer.removeListener('window:fullscreen-change', listener);
+      };
+    },
   },
   system: {
     getMetrics: () => ipcRenderer.invoke('system:metrics'),

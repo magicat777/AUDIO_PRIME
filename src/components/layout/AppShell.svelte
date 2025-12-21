@@ -112,6 +112,21 @@
         // Reset beat detector
         audioEngine.resetBeat();
         break;
+      case 'a':
+        if (e.shiftKey) {
+          // Shift+A: Auto-arrange panels
+          e.preventDefault();
+          const visiblePanelIds = Object.entries($moduleVisibility)
+            .filter(([key, visible]) => visible && key !== 'waterfall')
+            .map(([key]) => key)
+            .filter(Boolean);
+          gridLayout.autoArrange(visiblePanelIds);
+        }
+        break;
+      case 'q':
+        // Q: Quit application
+        window.electronAPI?.window.quit();
+        break;
     }
   }
 

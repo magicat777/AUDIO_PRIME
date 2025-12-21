@@ -3,7 +3,7 @@
   import { audioEngine } from '../../core/AudioEngine';
   import type { AudioDevice } from '../../core/AudioEngine';
   import { moduleVisibility } from '../../stores/moduleVisibility';
-  import { gridLayout } from '../../stores/gridLayout';
+  import { gridLayout, layoutPresets } from '../../stores/gridLayout';
 
   export let open = false;
 
@@ -19,6 +19,53 @@
   // Check if all panels are locked
   $: allLocked = Object.values($gridLayout.panels).every(p => p.locked);
   $: someLocked = Object.values($gridLayout.panels).some(p => p.locked);
+
+  // Get visible panel IDs for auto-arrange
+  $: visiblePanelIds = Object.entries($moduleVisibility)
+    .filter(([key, visible]) => visible && key !== 'waterfall') // waterfall is part of bassDetail
+    .map(([key]) => {
+      // Map module visibility keys to panel IDs
+      const mapping: Record<string, string> = {
+        spectrum: 'spectrum',
+        vuMeters: 'vuMeters',
+        bassDetail: 'bassDetail',
+        lufsMetering: 'lufsMetering',
+        bpmTempo: 'bpmTempo',
+        voiceDetection: 'voiceDetection',
+        stereoCorrelation: 'stereoCorrelation',
+        goniometer: 'goniometer',
+        oscilloscope: 'oscilloscope',
+        frequencyBands: 'frequencyBands',
+        debug: 'debug',
+        spotify: 'spotify',
+      };
+      return mapping[key];
+    })
+    .filter(Boolean) as string[];
+
+  function handleAutoArrange() {
+    gridLayout.autoArrange(visiblePanelIds);
+  }
+
+  // Preset management
+  let newPresetName = '';
+  let showSavePreset = false;
+
+  function handleSavePreset() {
+    if (newPresetName.trim() || $layoutPresets.length < 5) {
+      gridLayout.savePreset(newPresetName);
+      newPresetName = '';
+      showSavePreset = false;
+    }
+  }
+
+  function handleLoadPreset(index: number) {
+    gridLayout.loadPreset(index);
+  }
+
+  function handleDeletePreset(index: number) {
+    gridLayout.deletePreset(index);
+  }
 
   // Split devices by type
   $: monitorDevices = devices.filter(d => d.type === 'monitor');
@@ -274,10 +321,62 @@
             <span class="badge active">ON</span>
           {/if}
         </button>
+        <button class="layout-btn" on:click={handleAutoArrange}>
+          <span class="arrange-icon">⊞</span>
+          <span>Auto-Arrange</span>
+        </button>
         <button class="layout-btn danger" on:click={() => gridLayout.reset()}>
           <span class="reset-icon">↺</span>
           <span>Reset Layout</span>
         </button>
+      </div>
+    </section>
+
+    <section class="section">
+      <h3>Layout Presets</h3>
+      <div class="presets-container">
+        {#if $layoutPresets.length > 0}
+          <div class="preset-list">
+            {#each $layoutPresets as preset, index}
+              <div class="preset-item">
+                <button class="preset-load-btn" on:click={() => handleLoadPreset(index)} title="Load preset">
+                  <span class="preset-name">{preset.name}</span>
+                </button>
+                <button class="preset-delete-btn" on:click={() => handleDeletePreset(index)} title="Delete preset">
+                  ×
+                </button>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <p class="no-presets">No saved presets</p>
+        {/if}
+
+        {#if showSavePreset}
+          <div class="save-preset-form">
+            <input
+              type="text"
+              bind:value={newPresetName}
+              placeholder="Preset name"
+              class="preset-input"
+              on:keydown={(e) => e.key === 'Enter' && handleSavePreset()}
+            />
+            <button class="preset-save-btn" on:click={handleSavePreset}>Save</button>
+            <button class="preset-cancel-btn" on:click={() => showSavePreset = false}>Cancel</button>
+          </div>
+        {:else}
+          <button
+            class="layout-btn"
+            on:click={() => showSavePreset = true}
+            disabled={$layoutPresets.length >= 5}
+          >
+            <span class="save-icon">💾</span>
+            <span>Save Current Layout</span>
+            {#if $layoutPresets.length >= 5}
+              <span class="badge">MAX</span>
+            {/if}
+          </button>
+        {/if}
       </div>
     </section>
 
@@ -291,6 +390,8 @@
         <div class="shortcut"><kbd>Shift</kbd>+<kbd>G</kbd> Toggle Grid</div>
         <div class="shortcut"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> Toggle Snap</div>
         <div class="shortcut"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> Reset Layout</div>
+        <div class="shortcut"><kbd>Shift</kbd>+<kbd>A</kbd> Auto-Arrange</div>
+        <div class="shortcut"><kbd>Q</kbd> Quit</div>
       </div>
     </section>
   </div>
@@ -535,7 +636,7 @@
     color: var(--meter-green);
   }
 
-  .lock-icon, .grid-icon, .snap-icon, .reset-icon {
+  .lock-icon, .grid-icon, .snap-icon, .reset-icon, .arrange-icon {
     font-size: 0.9rem;
   }
 
@@ -690,5 +791,150 @@
     padding: 0.75rem;
     text-align: center;
     font-style: italic;
+  }
+
+  /* Layout Presets Styles */
+  .presets-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .preset-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .preset-item {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .preset-load-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    padding: 0.4rem 0.75rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    text-align: left;
+  }
+
+  .preset-load-btn:hover {
+    background: rgba(74, 158, 255, 0.1);
+    border-color: var(--accent-color);
+    color: var(--text-primary);
+  }
+
+  .preset-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .preset-delete-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-muted);
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .preset-delete-btn:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: var(--meter-red);
+    color: var(--meter-red);
+  }
+
+  .save-preset-form {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  .preset-input {
+    flex: 1;
+    padding: 0.4rem 0.5rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 0.8rem;
+  }
+
+  .preset-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+  }
+
+  .preset-input::placeholder {
+    color: var(--text-muted);
+  }
+
+  .preset-save-btn {
+    padding: 0.4rem 0.6rem;
+    background: var(--accent-color);
+    border: none;
+    border-radius: 4px;
+    color: white;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .preset-save-btn:hover {
+    background: var(--accent-hover);
+  }
+
+  .preset-cancel-btn {
+    padding: 0.4rem 0.6rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .preset-cancel-btn:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: var(--meter-red);
+    color: var(--meter-red);
+  }
+
+  .no-presets {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-style: italic;
+    padding: 0.25rem 0;
+  }
+
+  .save-icon {
+    font-size: 0.9rem;
+  }
+
+  .layout-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .layout-btn:disabled:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--border-color);
+    color: var(--text-secondary);
   }
 </style>

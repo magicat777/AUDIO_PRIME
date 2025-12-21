@@ -104,6 +104,7 @@ const IPC = {
   AUDIO_STOP: 'audio:stop',
   AUDIO_SELECT_DEVICE: 'audio:select-device',
   WINDOW_FULLSCREEN: 'window:fullscreen',
+  WINDOW_QUIT: 'window:quit',
   // Spotify channels
   SPOTIFY_CONNECT: 'spotify:connect',
   SPOTIFY_DISCONNECT: 'spotify:disconnect',
@@ -321,6 +322,15 @@ function createWindow(): void {
     stopAudioCapture();
   });
 
+  // Notify renderer of fullscreen state changes for proportional panel scaling
+  mainWindow.on('enter-full-screen', () => {
+    mainWindow?.webContents.send('window:fullscreen-change', true);
+  });
+
+  mainWindow.on('leave-full-screen', () => {
+    mainWindow?.webContents.send('window:fullscreen-change', false);
+  });
+
   // Security: Open external links in default browser, not in app
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
@@ -359,6 +369,10 @@ ipcMain.handle(IPC.WINDOW_FULLSCREEN, () => {
     return mainWindow.isFullScreen();
   }
   return false;
+});
+
+ipcMain.handle(IPC.WINDOW_QUIT, () => {
+  app.quit();
 });
 
 // ============================================

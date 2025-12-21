@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import interact from 'interactjs';
-  import { gridLayout, GRID_CONFIG, type PanelId } from '../../stores/gridLayout';
+  import { gridLayout, scaledPanelLayouts, scaleState, GRID_CONFIG, type PanelId } from '../../stores/gridLayout';
 
   // Props
   export let panelId: PanelId;
@@ -13,22 +13,24 @@
   let isDragging = false;
   let isResizing = false;
 
-  // Reactive panel data from store
-  $: panel = $gridLayout.panels[panelId];
+  // Reactive panel data from store (use scaled layouts for rendering)
+  $: panel = $scaledPanelLayouts[panelId];
+  $: rawPanel = $gridLayout.panels[panelId]; // Original unscaled panel for lock state
   $: isActive = $gridLayout.activePanel === panelId;
   $: snapEnabled = $gridLayout.snapEnabled;
+  $: scale = $scaleState;
 
-  // Calculate pixel position and size from grid coordinates
+  // Calculate pixel position and size from scaled grid coordinates
   $: pixelPos = panel ? gridLayout.gridToPixels(panel.x, panel.y) : { x: 0, y: 0 };
   $: pixelSize = panel ? gridLayout.sizeToPixels(panel.width, panel.height) : { width: 200, height: 150 };
 
-  // Style string for positioning
-  $: panelStyle = panel ? `
+  // Style string for positioning (use rawPanel for zIndex as it's not affected by scaling)
+  $: panelStyle = panel && rawPanel ? `
     left: ${pixelPos.x}px;
     top: ${pixelPos.y}px;
     width: ${pixelSize.width}px;
     height: ${pixelSize.height}px;
-    z-index: ${panel.zIndex + (isActive ? 100 : 0)};
+    z-index: ${rawPanel.zIndex + (isActive ? 100 : 0)};
   ` : '';
 
   onMount(() => {
@@ -62,7 +64,7 @@
             panelElement.style.willChange = 'transform';
           },
           move: (event) => {
-            if (panel?.locked) return;
+            if (rawPanel?.locked) return;
 
             // During drag, use CSS transform for performance (GPU layer)
             const target = event.target as HTMLElement;
@@ -83,20 +85,25 @@
             const x = parseFloat(target.getAttribute('data-x') || '0');
             const y = parseFloat(target.getAttribute('data-y') || '0');
 
-            // Convert to grid coordinates and update store
-            const newGridPos = gridLayout.pixelsToGrid(
+            // Convert to scaled grid coordinates
+            const scaledGridPos = gridLayout.pixelsToGrid(
               pixelPos.x + x,
               pixelPos.y + y,
               snapEnabled
             );
+
+            // Convert back to reference coordinates by dividing by scale factors
+            const { scaleX, scaleY } = scale;
+            const refGridX = scaleX > 0 ? Math.round(scaledGridPos.x / scaleX) : scaledGridPos.x;
+            const refGridY = scaleY > 0 ? Math.round(scaledGridPos.y / scaleY) : scaledGridPos.y;
 
             // Reset transform and update actual position
             target.style.transform = '';
             target.removeAttribute('data-x');
             target.removeAttribute('data-y');
 
-            // Update store (this triggers reactive update)
-            gridLayout.updatePosition(panelId, Math.max(0, newGridPos.x), Math.max(0, newGridPos.y));
+            // Update store with reference coordinates (this triggers reactive update)
+            gridLayout.updatePosition(panelId, Math.max(0, refGridX), Math.max(0, refGridY));
           },
         },
       })
@@ -134,7 +141,7 @@
             panelElement.style.willChange = 'width, height';
           },
           move: (event) => {
-            if (panel?.locked) return;
+            if (rawPanel?.locked) return;
 
             // During resize, update dimensions directly (still performant)
             const target = event.target as HTMLElement;
@@ -146,11 +153,16 @@
             gridLayout.setActivePanel(null);
             panelElement.style.willChange = '';
 
-            // Convert to grid cells and update store
-            const newWidth = Math.round((event.rect.width + GRID_CONFIG.gap) / GRID_CONFIG.cellSize);
-            const newHeight = Math.round((event.rect.height + GRID_CONFIG.gap) / GRID_CONFIG.cellSize);
+            // Convert to scaled grid cells
+            const scaledWidth = Math.round((event.rect.width + GRID_CONFIG.gap) / GRID_CONFIG.cellSize);
+            const scaledHeight = Math.round((event.rect.height + GRID_CONFIG.gap) / GRID_CONFIG.cellSize);
 
-            gridLayout.updateSize(panelId, newWidth, newHeight);
+            // Convert back to reference coordinates by dividing by scale factors
+            const { scaleX, scaleY } = scale;
+            const refWidth = scaleX > 0 ? Math.round(scaledWidth / scaleX) : scaledWidth;
+            const refHeight = scaleY > 0 ? Math.round(scaledHeight / scaleY) : scaledHeight;
+
+            gridLayout.updateSize(panelId, refWidth, refHeight);
           },
         },
       });
@@ -181,7 +193,7 @@
     class:is-dragging={isDragging}
     class:is-resizing={isResizing}
     class:is-active={isActive}
-    class:is-locked={panel.locked}
+    class:is-locked={rawPanel?.locked}
     style={panelStyle}
     role="region"
     aria-label={title || panelId}
@@ -190,7 +202,7 @@
     <!-- Drag handle (title bar) -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="drag-handle" on:dblclick={handleDoubleClick}>
-      {#if panel.locked}
+      {#if rawPanel?.locked}
         <span class="lock-icon" title="Locked - double-click to unlock">🔒</span>
       {/if}
       {#if title}
@@ -205,7 +217,7 @@
     </div>
 
     <!-- Resize handle (bottom-right corner) -->
-    {#if !panel.locked}
+    {#if !rawPanel?.locked}
       <div class="resize-handle" aria-hidden="true">
         <svg viewBox="0 0 10 10" class="resize-icon">
           <path d="M8,0 L10,0 L10,10 L0,10 L0,8 L8,8 Z" fill="currentColor" opacity="0.3" />

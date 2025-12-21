@@ -3,6 +3,7 @@
  *
  * Uses a virtual grid system where panels snap to grid cells.
  * Positions are stored as grid coordinates, converted to pixels at render time.
+ * Supports proportional scaling when window size changes (e.g., fullscreen).
  */
 import { writable, derived, get } from 'svelte/store';
 
@@ -15,6 +16,32 @@ export const GRID_CONFIG = {
   gap: 8,                 // Gap between panels in pixels
   padding: 8,             // Container padding in pixels
 } as const;
+
+// Reference dimensions for proportional scaling
+// These represent the "design size" at which default layouts look correct
+export const REFERENCE_DIMENSIONS = {
+  width: 1700,   // Reference container width
+  height: 1280,  // Reference container height
+} as const;
+
+// Scale state for proportional panel scaling
+export interface ScaleState {
+  containerWidth: number;
+  containerHeight: number;
+  scaleX: number;
+  scaleY: number;
+  isFullscreen: boolean;
+}
+
+// User preset for saving/loading layouts
+export interface LayoutPreset {
+  name: string;
+  panels: Record<string, PanelLayout>;
+  createdAt: number;
+}
+
+// Maximum number of presets
+const MAX_PRESETS = 5;
 
 // Panel position and size (in grid cells, not pixels)
 export interface PanelLayout {
@@ -58,6 +85,8 @@ export interface GridLayoutState {
   activePanel: string | null;      // Currently being dragged/resized
   gridVisible: boolean;            // Show grid overlay for alignment
   snapEnabled: boolean;            // Enable snap-to-grid
+  scale: ScaleState;               // Scaling state for proportional layouts
+  presets: LayoutPreset[];         // User-saved layout presets
 }
 
 const defaultState: GridLayoutState = {
@@ -67,6 +96,14 @@ const defaultState: GridLayoutState = {
   activePanel: null,
   gridVisible: false,
   snapEnabled: true,
+  scale: {
+    containerWidth: REFERENCE_DIMENSIONS.width,
+    containerHeight: REFERENCE_DIMENSIONS.height,
+    scaleX: 1,
+    scaleY: 1,
+    isFullscreen: false,
+  },
+  presets: [],
 };
 
 // Load from localStorage
@@ -93,6 +130,10 @@ function loadFromStorage(): GridLayoutState {
           ...defaultState,
           ...parsed,
           panels: mergedPanels,
+          // Always reset scale state on load (don't persist fullscreen state)
+          scale: defaultState.scale,
+          // Load presets if available
+          presets: Array.isArray(parsed.presets) ? parsed.presets : [],
         };
       } catch {
         return defaultState;
@@ -287,6 +328,142 @@ function createGridLayoutStore() {
     getPanel: (panelId: string): PanelLayout | undefined => {
       return get({ subscribe }).panels[panelId];
     },
+
+    // Update container size and recalculate scale factors
+    setContainerSize: (containerWidth: number, containerHeight: number) => {
+      update(state => {
+        const scaleX = containerWidth / REFERENCE_DIMENSIONS.width;
+        const scaleY = containerHeight / REFERENCE_DIMENSIONS.height;
+
+        return {
+          ...state,
+          scale: {
+            ...state.scale,
+            containerWidth,
+            containerHeight,
+            scaleX,
+            scaleY,
+          },
+        };
+      });
+    },
+
+    // Set fullscreen state
+    setFullscreen: (isFullscreen: boolean) => {
+      update(state => ({
+        ...state,
+        scale: {
+          ...state.scale,
+          isFullscreen,
+        },
+      }));
+    },
+
+    // Auto-arrange panels in a grid pattern
+    autoArrange: (visiblePanelIds: string[]) => {
+      update(state => {
+        const count = visiblePanelIds.length;
+        if (count === 0) return state;
+
+        // Calculate grid dimensions in reference coordinates
+        const availableWidth = Math.floor(REFERENCE_DIMENSIONS.width / GRID_CONFIG.cellSize);
+        const availableHeight = Math.floor(REFERENCE_DIMENSIONS.height / GRID_CONFIG.cellSize);
+
+        // Calculate optimal grid layout
+        const cols = Math.ceil(Math.sqrt(count));
+        const rows = Math.ceil(count / cols);
+
+        // Calculate cell size in grid units (leave gap for spacing)
+        const cellWidth = Math.floor((availableWidth - 2) / cols);
+        const cellHeight = Math.floor((availableHeight - 2) / rows);
+
+        // Minimum sizes in grid cells
+        const minWidthCells = Math.ceil(GRID_CONFIG.minPanelWidth / GRID_CONFIG.cellSize);
+        const minHeightCells = Math.ceil(GRID_CONFIG.minPanelHeight / GRID_CONFIG.cellSize);
+
+        // Arrange panels
+        const newPanels = { ...state.panels };
+        visiblePanelIds.forEach((id, index) => {
+          const col = index % cols;
+          const row = Math.floor(index / cols);
+
+          const panel = newPanels[id];
+          if (panel) {
+            newPanels[id] = {
+              ...panel,
+              x: col * cellWidth + 1, // +1 for padding
+              y: row * cellHeight + 1,
+              width: Math.max(minWidthCells, cellWidth - 1),
+              height: Math.max(minHeightCells, cellHeight - 1),
+              locked: false,
+            };
+          }
+        });
+
+        const newState = { ...state, panels: newPanels };
+        saveToStorage(newState);
+        return newState;
+      });
+    },
+
+    // Get current scale factors
+    getScale: (): ScaleState => {
+      return get({ subscribe }).scale;
+    },
+
+    // Save current layout as a preset
+    savePreset: (name: string) => {
+      update(state => {
+        // Create a deep copy of current panels
+        const panelsCopy = JSON.parse(JSON.stringify(state.panels));
+
+        const newPreset: LayoutPreset = {
+          name: name.trim() || `Preset ${state.presets.length + 1}`,
+          panels: panelsCopy,
+          createdAt: Date.now(),
+        };
+
+        // Add new preset (limit to MAX_PRESETS)
+        let presets = [...state.presets, newPreset];
+        if (presets.length > MAX_PRESETS) {
+          presets = presets.slice(-MAX_PRESETS);
+        }
+
+        const newState = { ...state, presets };
+        saveToStorage(newState);
+        return newState;
+      });
+    },
+
+    // Load a preset by index
+    loadPreset: (index: number) => {
+      update(state => {
+        const preset = state.presets[index];
+        if (!preset) return state;
+
+        // Deep copy the preset panels
+        const panelsCopy = JSON.parse(JSON.stringify(preset.panels));
+
+        const newState = { ...state, panels: panelsCopy };
+        saveToStorage(newState);
+        return newState;
+      });
+    },
+
+    // Delete a preset by index
+    deletePreset: (index: number) => {
+      update(state => {
+        const presets = state.presets.filter((_, i) => i !== index);
+        const newState = { ...state, presets };
+        saveToStorage(newState);
+        return newState;
+      });
+    },
+
+    // Get all presets
+    getPresets: (): LayoutPreset[] => {
+      return get({ subscribe }).presets;
+    },
   };
 }
 
@@ -294,3 +471,53 @@ export const gridLayout = createGridLayoutStore();
 
 // Derived store for just the panels (for reactive updates)
 export const panelLayouts = derived(gridLayout, $grid => $grid.panels);
+
+// Derived store for scale state
+export const scaleState = derived(gridLayout, $grid => $grid.scale);
+
+// Derived store for presets
+export const layoutPresets = derived(gridLayout, $grid => $grid.presets);
+
+// Derived store for scaled panel layouts (applies scale factors for rendering)
+// Clamps panels to fit within the visible container bounds
+export const scaledPanelLayouts = derived(gridLayout, $grid => {
+  const { scaleX, scaleY, containerWidth, containerHeight } = $grid.scale;
+  const minWidthCells = Math.ceil(GRID_CONFIG.minPanelWidth / GRID_CONFIG.cellSize);
+  const minHeightCells = Math.ceil(GRID_CONFIG.minPanelHeight / GRID_CONFIG.cellSize);
+
+  // Calculate available grid cells based on current container size
+  const maxGridX = Math.floor((containerWidth - GRID_CONFIG.padding * 2) / GRID_CONFIG.cellSize);
+  const maxGridY = Math.floor((containerHeight - GRID_CONFIG.padding * 2) / GRID_CONFIG.cellSize);
+
+  const scaledPanels: Record<string, PanelLayout> = {};
+
+  for (const [id, panel] of Object.entries($grid.panels)) {
+    // Scale dimensions first
+    const scaledWidth = Math.max(minWidthCells, Math.round(panel.width * scaleX));
+    const scaledHeight = Math.max(minHeightCells, Math.round(panel.height * scaleY));
+
+    // Scale positions
+    let scaledX = Math.round(panel.x * scaleX);
+    let scaledY = Math.round(panel.y * scaleY);
+
+    // Clamp positions so panels don't extend beyond visible bounds
+    // Ensure panel doesn't extend past right edge
+    if (scaledX + scaledWidth > maxGridX) {
+      scaledX = Math.max(0, maxGridX - scaledWidth);
+    }
+    // Ensure panel doesn't extend past bottom edge
+    if (scaledY + scaledHeight > maxGridY) {
+      scaledY = Math.max(0, maxGridY - scaledHeight);
+    }
+
+    scaledPanels[id] = {
+      ...panel,
+      x: scaledX,
+      y: scaledY,
+      width: scaledWidth,
+      height: scaledHeight,
+    };
+  }
+
+  return scaledPanels;
+});
