@@ -60,12 +60,12 @@ export interface PanelLayout {
 }
 
 // Default layouts for each panel (position in grid cells)
-// Grid is roughly 85 columns x 64 rows at 1700x1280 with 20px cells
+// Grid is roughly 85 columns x 68 rows at 1715x1410 with 20px cells
 const defaultLayouts: Record<string, Omit<PanelLayout, 'id'>> = {
   // Top row - main visualizers
   spectrum: { x: 0, y: 0, width: 46, height: 28, zIndex: 1, locked: false },
   bassDetail: { x: 46, y: 0, width: 25, height: 28, zIndex: 1, locked: false },
-  debug: { x: 71, y: 0, width: 14, height: 41, zIndex: 1, locked: false },
+  debug: { x: 71, y: 0, width: 14, height: 68, zIndex: 1, locked: false },
 
   // Second row - meters
   vuMeters: { x: 0, y: 28, width: 24, height: 13, zIndex: 1, locked: false },
@@ -76,11 +76,11 @@ const defaultLayouts: Record<string, Omit<PanelLayout, 'id'>> = {
   // Third row
   bpmTempo: { x: 0, y: 41, width: 13, height: 14, zIndex: 1, locked: false },
   oscilloscope: { x: 13, y: 41, width: 33, height: 14, zIndex: 1, locked: false },
-  spotify: { x: 46, y: 41, width: 25, height: 23, zIndex: 1, locked: false },
+  spotify: { x: 46, y: 41, width: 25, height: 27, zIndex: 1, locked: false },
 
   // Bottom row
   voiceDetection: { x: 0, y: 55, width: 46, height: 9, zIndex: 1, locked: false },
-  frequencyBands: { x: 46, y: 55, width: 22, height: 13, zIndex: 1, locked: false },
+  frequencyBands: { x: 0, y: 55, width: 46, height: 13, zIndex: 1, locked: false },
 };
 
 export type PanelId = keyof typeof defaultLayouts;
