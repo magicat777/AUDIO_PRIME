@@ -3,6 +3,17 @@
   import { get } from 'svelte/store';
   import { audioEngine } from '../../core/AudioEngine';
 
+  // Display mode: 'horizontal' or 'vertical'
+  type DisplayMode = 'horizontal' | 'vertical';
+  let displayMode: DisplayMode = 'horizontal';
+
+  function toggleDisplayMode() {
+    displayMode = displayMode === 'horizontal' ? 'vertical' : 'horizontal';
+  }
+
+  // Reactive label for toggle button
+  $: modeLabel = displayMode === 'horizontal' ? 'HORIZ' : 'VERT';
+
   // Display levels (with VU ballistics applied)
   let leftLevel = -100;
   let rightLevel = -100;
@@ -136,76 +147,152 @@
   }
 </script>
 
-<div class="meter-panel">
+<div class="meter-panel" class:vertical-mode={displayMode === 'vertical'}>
   <div class="panel-header">
-    <span class="title">VU METERS</span>
     <span class="peak-label" class:clipping={displayPeakLevel > -1}>
       PEAK: {displayPeakLevel > -100 ? displayPeakLevel.toFixed(1) : '---'} dB
     </span>
+    <button
+      class="mode-toggle"
+      on:click={toggleDisplayMode}
+      title="Toggle between horizontal and vertical meters"
+      aria-label="Toggle display mode"
+    >
+      <span class="toggle-label">{modeLabel}</span>
+      <span class="toggle-indicator" class:vertical-active={displayMode === 'vertical'}></span>
+    </button>
   </div>
 
-  <div class="vu-meter">
-    <div class="meter-label">L</div>
-    <div class="meter-bar">
-      <div
-        class="meter-fill"
-        style="width: {dbToPercent(displayLeftLevel)}%; background: {getMeterColor(displayLeftLevel)}"
-      ></div>
-      <div
-        class="peak-hold"
-        style="left: {dbToPercent(displayPeakHoldL)}%; background: {getPeakHoldColor(displayPeakHoldL)}"
-      ></div>
+  {#if displayMode === 'horizontal'}
+    <!-- Horizontal Mode -->
+    <div class="vu-meter">
+      <div class="meter-label">L</div>
+      <div class="meter-bar">
+        <div
+          class="meter-fill"
+          style="width: {dbToPercent(displayLeftLevel)}%; background: {getMeterColor(displayLeftLevel)}"
+        ></div>
+        <div
+          class="peak-hold"
+          style="left: {dbToPercent(displayPeakHoldL)}%; background: {getPeakHoldColor(displayPeakHoldL)}"
+        ></div>
+      </div>
+      <div class="meter-value mono">{displayLeftLevel > -100 ? displayLeftLevel.toFixed(1) : '---'}</div>
     </div>
-    <div class="meter-value mono">{displayLeftLevel > -100 ? displayLeftLevel.toFixed(1) : '---'}</div>
-  </div>
 
-  <div class="vu-meter">
-    <div class="meter-label">R</div>
-    <div class="meter-bar">
-      <div
-        class="meter-fill"
-        style="width: {dbToPercent(displayRightLevel)}%; background: {getMeterColor(displayRightLevel)}"
-      ></div>
-      <div
-        class="peak-hold"
-        style="left: {dbToPercent(displayPeakHoldR)}%; background: {getPeakHoldColor(displayPeakHoldR)}"
-      ></div>
+    <div class="vu-meter">
+      <div class="meter-label">R</div>
+      <div class="meter-bar">
+        <div
+          class="meter-fill"
+          style="width: {dbToPercent(displayRightLevel)}%; background: {getMeterColor(displayRightLevel)}"
+        ></div>
+        <div
+          class="peak-hold"
+          style="left: {dbToPercent(displayPeakHoldR)}%; background: {getPeakHoldColor(displayPeakHoldR)}"
+        ></div>
+      </div>
+      <div class="meter-value mono">{displayRightLevel > -100 ? displayRightLevel.toFixed(1) : '---'}</div>
     </div>
-    <div class="meter-value mono">{displayRightLevel > -100 ? displayRightLevel.toFixed(1) : '---'}</div>
-  </div>
 
-  <div class="meter-scale">
-    <span>-60</span>
-    <span>-40</span>
-    <span>-20</span>
-    <span>-12</span>
-    <span>-6</span>
-    <span>-3</span>
-    <span>0</span>
-  </div>
+    <div class="meter-scale">
+      <span>-60</span>
+      <span>-40</span>
+      <span>-20</span>
+      <span>-12</span>
+      <span>-6</span>
+      <span>-3</span>
+      <span>0</span>
+    </div>
 
-  <div class="stats-row">
-    <div class="stat-group">
-      <span class="stat-label">RMS</span>
-      <span class="stat-value mono">L: {displayLeftLevel > -100 ? displayLeftLevel.toFixed(1) : '---'}</span>
-      <span class="stat-value mono">R: {displayRightLevel > -100 ? displayRightLevel.toFixed(1) : '---'}</span>
+    <div class="stats-row">
+      <div class="stat-group">
+        <span class="stat-label">RMS</span>
+        <span class="stat-value mono">L: {displayLeftLevel > -100 ? displayLeftLevel.toFixed(1) : '---'}</span>
+        <span class="stat-value mono">R: {displayRightLevel > -100 ? displayRightLevel.toFixed(1) : '---'}</span>
+      </div>
+      <div class="stat-group">
+        <span class="stat-label">CREST</span>
+        <span class="stat-value mono" class:high-crest={displayCrestL > 12}>
+          L: {displayCrestL > 0 ? displayCrestL.toFixed(1) : '---'}
+        </span>
+        <span class="stat-value mono" class:high-crest={displayCrestR > 12}>
+          R: {displayCrestR > 0 ? displayCrestR.toFixed(1) : '---'}
+        </span>
+      </div>
+      <div class="stat-group">
+        <span class="stat-label">AVG CREST</span>
+        <span class="stat-value mono crest-avg" class:compressed={((displayCrestL + displayCrestR) / 2) < 6} class:dynamic={((displayCrestL + displayCrestR) / 2) >= 12}>
+          {((displayCrestL + displayCrestR) / 2) > 0 ? ((displayCrestL + displayCrestR) / 2).toFixed(1) : '---'} dB
+        </span>
+      </div>
     </div>
-    <div class="stat-group">
-      <span class="stat-label">CREST</span>
-      <span class="stat-value mono" class:high-crest={displayCrestL > 12}>
-        L: {displayCrestL > 0 ? displayCrestL.toFixed(1) : '---'}
-      </span>
-      <span class="stat-value mono" class:high-crest={displayCrestR > 12}>
-        R: {displayCrestR > 0 ? displayCrestR.toFixed(1) : '---'}
-      </span>
+  {:else}
+    <!-- Vertical Mode -->
+    <div class="vertical-meters">
+      <div class="vu-meter-vertical">
+        <div class="meter-value-top mono">{displayLeftLevel > -100 ? displayLeftLevel.toFixed(1) : '---'}</div>
+        <div class="meter-bar-vertical">
+          <div
+            class="meter-fill-vertical"
+            style="height: {dbToPercent(displayLeftLevel)}%; background: {getMeterColor(displayLeftLevel)}"
+          ></div>
+          <div
+            class="peak-hold-vertical"
+            style="bottom: {dbToPercent(displayPeakHoldL)}%; background: {getPeakHoldColor(displayPeakHoldL)}"
+          ></div>
+        </div>
+        <div class="meter-label-vertical">L</div>
+      </div>
+
+      <div class="meter-scale-vertical">
+        <span>0</span>
+        <span>-6</span>
+        <span>-12</span>
+        <span>-24</span>
+        <span>-40</span>
+        <span>-60</span>
+      </div>
+
+      <div class="vu-meter-vertical">
+        <div class="meter-value-top mono">{displayRightLevel > -100 ? displayRightLevel.toFixed(1) : '---'}</div>
+        <div class="meter-bar-vertical">
+          <div
+            class="meter-fill-vertical"
+            style="height: {dbToPercent(displayRightLevel)}%; background: {getMeterColor(displayRightLevel)}"
+          ></div>
+          <div
+            class="peak-hold-vertical"
+            style="bottom: {dbToPercent(displayPeakHoldR)}%; background: {getPeakHoldColor(displayPeakHoldR)}"
+          ></div>
+        </div>
+        <div class="meter-label-vertical">R</div>
+      </div>
     </div>
-    <div class="stat-group">
-      <span class="stat-label">AVG CREST</span>
-      <span class="stat-value mono crest-avg" class:compressed={((displayCrestL + displayCrestR) / 2) < 6} class:dynamic={((displayCrestL + displayCrestR) / 2) >= 12}>
-        {((displayCrestL + displayCrestR) / 2) > 0 ? ((displayCrestL + displayCrestR) / 2).toFixed(1) : '---'} dB
-      </span>
+
+    <div class="stats-vertical">
+      <div class="stat-row-vertical">
+        <span class="stat-label">RMS</span>
+        <span class="stat-value mono">L: {displayLeftLevel > -100 ? displayLeftLevel.toFixed(1) : '---'}</span>
+        <span class="stat-value mono">R: {displayRightLevel > -100 ? displayRightLevel.toFixed(1) : '---'}</span>
+      </div>
+      <div class="stat-row-vertical">
+        <span class="stat-label">CREST</span>
+        <span class="stat-value mono" class:high-crest={displayCrestL > 12}>
+          L: {displayCrestL > 0 ? displayCrestL.toFixed(1) : '---'}
+        </span>
+        <span class="stat-value mono" class:high-crest={displayCrestR > 12}>
+          R: {displayCrestR > 0 ? displayCrestR.toFixed(1) : '---'}
+        </span>
+      </div>
+      <div class="stat-row-vertical">
+        <span class="stat-label">AVG CREST</span>
+        <span class="stat-value mono crest-avg" class:compressed={((displayCrestL + displayCrestR) / 2) < 6} class:dynamic={((displayCrestL + displayCrestR) / 2) >= 12}>
+          {((displayCrestL + displayCrestR) / 2) > 0 ? ((displayCrestL + displayCrestR) / 2).toFixed(1) : '---'} dB
+        </span>
+      </div>
     </div>
-  </div>
+  {/if}
 </div>
 
 <style>
@@ -347,5 +434,138 @@
 
   .crest-avg.dynamic {
     color: var(--meter-green);
+  }
+
+  /* Mode Toggle Button */
+  .mode-toggle {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 6px;
+    background: rgba(30, 35, 45, 0.9);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 3px;
+    color: #a0a0a0;
+    font-size: 9px;
+    font-family: monospace;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .mode-toggle:hover {
+    background: rgba(40, 50, 70, 0.95);
+    border-color: rgba(139, 92, 246, 0.6);
+    color: #ffffff;
+  }
+
+  .toggle-label {
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+
+  .toggle-indicator {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #8b5cf6;
+    transition: background 0.15s ease;
+  }
+
+  .toggle-indicator.vertical-active {
+    background: #22c55e;
+  }
+
+  /* Vertical Mode Styles */
+  .vertical-meters {
+    display: flex;
+    justify-content: center;
+    align-items: stretch;
+    gap: 0.5rem;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .vu-meter-vertical {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    flex: 1;
+    max-width: 40px;
+  }
+
+  .meter-value-top {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    height: 14px;
+    text-align: center;
+  }
+
+  .meter-bar-vertical {
+    flex: 1;
+    width: 100%;
+    background: var(--bg-secondary);
+    border-radius: 2px;
+    position: relative;
+    overflow: visible;
+    min-height: 60px;
+  }
+
+  .meter-fill-vertical {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    max-height: 100%;
+    transition: height 50ms ease-out;
+    border-radius: 2px;
+  }
+
+  .peak-hold-vertical {
+    position: absolute;
+    left: -2px;
+    width: calc(100% + 4px);
+    height: 3px;
+    border-radius: 1px;
+    transition: bottom 50ms ease-out;
+    transform: translateY(50%);
+  }
+
+  .meter-label-vertical {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-align: center;
+  }
+
+  .meter-scale-vertical {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 14px 0.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.5rem;
+    color: var(--text-muted);
+    text-align: center;
+    min-height: 60px;
+  }
+
+  .stats-vertical {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding-top: 0.35rem;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .stat-row-vertical {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .stat-row-vertical .stat-label {
+    width: 70px;
+    text-align: left;
   }
 </style>
