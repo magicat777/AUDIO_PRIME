@@ -2,10 +2,35 @@
   import { onMount, onDestroy } from 'svelte';
   import interact from 'interactjs';
   import { gridLayout, scaledPanelLayouts, scaleState, GRID_CONFIG, type PanelId } from '../../stores/gridLayout';
+  import { moduleVisibility, type ModuleVisibility } from '../../stores/moduleVisibility';
 
   // Props
   export let panelId: PanelId;
   export let title: string = '';
+
+  // Map panel IDs to module visibility keys
+  const panelToModuleMap: Record<string, keyof ModuleVisibility> = {
+    spectrum: 'spectrum',
+    bassDetail: 'bassDetail',
+    debug: 'debug',
+    vuMeters: 'vuMeters',
+    lufsMetering: 'lufsMetering',
+    bpmTempo: 'bpmTempo',
+    voiceDetection: 'voiceDetection',
+    stereoCorrelation: 'stereoCorrelation',
+    goniometer: 'goniometer',
+    oscilloscope: 'oscilloscope',
+    frequencyBands: 'frequencyBands',
+    spotify: 'spotify',
+  };
+
+  function handleClosePanel(e: MouseEvent) {
+    e.stopPropagation(); // Prevent drag from starting
+    const moduleKey = panelToModuleMap[panelId];
+    if (moduleKey) {
+      moduleVisibility.toggle(moduleKey);
+    }
+  }
 
   // Local state
   let panelElement: HTMLDivElement;
@@ -210,6 +235,9 @@
       {#if title}
         <span class="panel-title">{title}</span>
       {/if}
+      <button class="close-led" on:click={handleClosePanel} title="Close panel">
+        <span class="led-light"></span>
+      </button>
       <div class="drag-indicator">⋮⋮</div>
     </div>
 
@@ -294,8 +322,47 @@
     text-transform: uppercase;
   }
 
-  .drag-indicator {
+  .close-led {
     margin-left: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    border-radius: 50%;
+  }
+
+  .led-light {
+    display: block;
+    width: 8px;
+    height: 8px;
+    background: rgba(239, 68, 68, 0.8);
+    border-radius: 50%;
+    box-shadow: 0 0 4px rgba(239, 68, 68, 0.6);
+    transition: all 0.15s ease;
+    animation: led-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes led-pulse {
+    0%, 100% {
+      box-shadow: 0 0 4px rgba(239, 68, 68, 0.6);
+    }
+    50% {
+      box-shadow: 0 0 8px rgba(239, 68, 68, 0.9);
+    }
+  }
+
+  .close-led:hover .led-light {
+    background: rgba(239, 68, 68, 1);
+    box-shadow: 0 0 10px rgba(239, 68, 68, 1);
+    animation: none;
+  }
+
+  .drag-indicator {
     font-size: 0.7rem;
     color: var(--text-muted);
     opacity: 0.4;
