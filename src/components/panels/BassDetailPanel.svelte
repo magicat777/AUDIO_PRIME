@@ -651,6 +651,7 @@
     grid-template-rows: 16px 1fr;
     gap: 2px;
     min-height: 0;
+    padding-right: 15px;
   }
 
   .wf-freq-scale {
