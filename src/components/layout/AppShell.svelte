@@ -24,6 +24,8 @@
   let sidebarOpen = false;
   let isCapturing = false;
   let lufsAnimationId: number | null = null;
+  let isFullscreen = false;
+  let fullscreenCleanup: (() => void) | null = null;
 
   // Track previous visibility state to detect newly enabled panels
   let prevVisibility: Record<string, boolean> = {};
@@ -85,12 +87,18 @@
 
     switch (e.key.toLowerCase()) {
       case 'escape':
-        sidebarOpen = false;
+        // ESC: Exit fullscreen if in fullscreen, otherwise close sidebar
+        if (isFullscreen) {
+          window.electronAPI?.window.toggleFullscreen();
+        } else {
+          sidebarOpen = false;
+        }
         break;
       case 'm':
         toggleSidebar();
         break;
       case 'f':
+        // F: Toggle fullscreen (auto-arrange happens via fullscreen change listener)
         window.electronAPI?.window.toggleFullscreen();
         break;
       case ' ':
@@ -130,12 +138,48 @@
     }
   }
 
+  // Helper to trigger auto-arrange
+  function triggerAutoArrange() {
+    const visiblePanelIds = Object.entries($moduleVisibility)
+      .filter(([key, visible]) => visible && key !== 'waterfall')
+      .map(([key]) => key)
+      .filter(Boolean);
+    gridLayout.autoArrange(visiblePanelIds);
+  }
+
   onMount(() => {
     window.addEventListener('keydown', handleKeydown);
     // Start LUFS update loop
     lufsAnimationId = requestAnimationFrame(updateLUFSData);
+
+    // Listen for fullscreen changes to auto-arrange panels
+    fullscreenCleanup = window.electronAPI?.window.onFullscreenChange((newFullscreen: boolean) => {
+      isFullscreen = newFullscreen;
+      if (newFullscreen) {
+        // Wait for container to resize before auto-arranging
+        // Use multiple frames to ensure layout is complete
+        let attempts = 0;
+        const maxAttempts = 10;
+        const waitForResize = () => {
+          attempts++;
+          if (attempts >= maxAttempts) {
+            triggerAutoArrange();
+          } else {
+            requestAnimationFrame(waitForResize);
+          }
+        };
+        // Start after a short delay to let the fullscreen transition begin
+        setTimeout(() => {
+          requestAnimationFrame(waitForResize);
+        }, 50);
+      }
+    }) ?? null;
+
     return () => {
       window.removeEventListener('keydown', handleKeydown);
+      if (fullscreenCleanup) {
+        fullscreenCleanup();
+      }
     };
   });
 

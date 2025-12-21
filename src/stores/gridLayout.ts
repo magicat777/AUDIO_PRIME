@@ -363,22 +363,30 @@ function createGridLayoutStore() {
     },
 
     // Auto-arrange panels in a grid pattern
+    // Uses actual container dimensions for proper fullscreen support
     autoArrange: (visiblePanelIds: string[]) => {
       update(state => {
         const count = visiblePanelIds.length;
         if (count === 0) return state;
 
-        // Calculate grid dimensions in reference coordinates
-        const availableWidth = Math.floor(REFERENCE_DIMENSIONS.width / GRID_CONFIG.cellSize);
-        const availableHeight = Math.floor(REFERENCE_DIMENSIONS.height / GRID_CONFIG.cellSize);
+        // Use actual container dimensions (supports fullscreen)
+        const { containerWidth, containerHeight, scaleX, scaleY } = state.scale;
+        const availableWidth = Math.floor((containerWidth - GRID_CONFIG.padding * 2) / GRID_CONFIG.cellSize);
+        const availableHeight = Math.floor((containerHeight - GRID_CONFIG.padding * 2) / GRID_CONFIG.cellSize);
 
         // Calculate optimal grid layout
         const cols = Math.ceil(Math.sqrt(count));
         const rows = Math.ceil(count / cols);
 
-        // Calculate cell size in grid units (leave gap for spacing)
-        const cellWidth = Math.floor((availableWidth - 2) / cols);
-        const cellHeight = Math.floor((availableHeight - 2) / rows);
+        // Calculate cell size in grid units for display
+        const displayCellWidth = Math.floor(availableWidth / cols);
+        const displayCellHeight = Math.floor(availableHeight / rows);
+
+        // Since scaledPanelLayouts applies uniformScale to stored sizes,
+        // we need to store larger values that will scale down to the desired display size
+        // stored = displayed / uniformScale
+        const uniformScale = Math.min(scaleX, scaleY);
+        const storageScale = uniformScale > 0 ? 1 / uniformScale : 1;
 
         // Minimum sizes in grid cells
         const minWidthCells = Math.ceil(GRID_CONFIG.minPanelWidth / GRID_CONFIG.cellSize);
@@ -392,12 +400,18 @@ function createGridLayoutStore() {
 
           const panel = newPanels[id];
           if (panel) {
+            // Positions are stored directly (not scaled by scaledPanelLayouts)
+            // Sizes need to be stored larger so they display at correct size after uniformScale is applied
+            const storedWidth = Math.round(Math.max(minWidthCells, displayCellWidth) * storageScale);
+            const storedHeight = Math.round(Math.max(minHeightCells, displayCellHeight) * storageScale);
+
+            // Position based on display cell size (positions aren't scaled)
             newPanels[id] = {
               ...panel,
-              x: col * cellWidth + 1, // +1 for padding
-              y: row * cellHeight + 1,
-              width: Math.max(minWidthCells, cellWidth - 1),
-              height: Math.max(minHeightCells, cellHeight - 1),
+              x: col * displayCellWidth,
+              y: row * displayCellHeight,
+              width: storedWidth,
+              height: storedHeight,
               locked: false,
             };
           }
