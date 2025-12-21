@@ -11,6 +11,23 @@
   let animationId: number | null = null;
   let spectrum = new Float32Array(512);
 
+  // Display mode: 'curve' for continuous line, 'bars' for discrete bars
+  type DisplayMode = 'curve' | 'bars';
+  let displayMode: DisplayMode = 'curve';
+
+  function toggleDisplayMode() {
+    displayMode = displayMode === 'curve' ? 'bars' : 'curve';
+  }
+
+  // Number of bars in BARS mode (1/3 octave-ish spacing for bass)
+  const BAR_COUNT = 16;
+
+  // Peak hold for BARS mode
+  const peakHold = new Float32Array(BAR_COUNT);
+  const peakDecayRate = 0.015; // How fast peaks decay (per frame)
+  const peakHoldTime = 30; // Frames to hold peak before decay starts
+  const peakHoldCounters = new Uint16Array(BAR_COUNT); // Hold counter for each bar
+
   // Bass frequency range for display
   const MIN_FREQ = 20;
   const MAX_FREQ = 200;
@@ -227,38 +244,8 @@
       }
       ctx.stroke();
 
-      // Draw bass spectrum as filled area
-      ctx.beginPath();
-
-      // Start from bottom left
-      ctx.moveTo(padding.left, height - padding.bottom);
-
       // Use bars from the processed spectrum that correspond to bass frequencies
       const bassBarCount = BASS_END_BAR - BASS_START_BAR + 1;
-
-      for (let i = 0; i < bassBarCount; i++) {
-        const barIndex = BASS_START_BAR + i;
-        const normalizedIndex = i / (bassBarCount - 1);
-
-        // Get magnitude directly from processed spectrum (already 0-1 normalized)
-        const magnitude = barIndex < spectrum.length ? spectrum[barIndex] : 0;
-
-        // Calculate position
-        const x = padding.left + normalizedIndex * graphWidth;
-        const barHeight = magnitude * graphHeight;
-        const y = height - padding.bottom - barHeight;
-
-        if (i === 0) {
-          ctx.moveTo(x, y);
-        } else {
-          ctx.lineTo(x, y);
-        }
-      }
-
-      // Complete the path
-      ctx.lineTo(width - padding.right, height - padding.bottom);
-      ctx.lineTo(padding.left, height - padding.bottom);
-      ctx.closePath();
 
       // PERFORMANCE: Use cached gradient, only recreate on resize
       if (!cachedGradient || cachedGradientHeight !== height) {
@@ -268,42 +255,150 @@
         cachedGradient.addColorStop(1, 'rgba(139, 92, 246, 0.1)'); // Fade at bottom
         cachedGradientHeight = height;
       }
-      ctx.fillStyle = cachedGradient;
-      ctx.fill();
 
-      // Draw outline
-      ctx.strokeStyle = 'rgba(139, 92, 246, 0.9)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
+      if (displayMode === 'bars') {
+        // BARS MODE: Draw discrete frequency bars
+        const barGap = 3; // Gap between bars in pixels
+        const totalGaps = (BAR_COUNT - 1) * barGap;
+        const barWidth = (graphWidth - totalGaps) / BAR_COUNT;
 
-      for (let i = 0; i < bassBarCount; i++) {
-        const barIndex = BASS_START_BAR + i;
-        const normalizedIndex = i / (bassBarCount - 1);
+        for (let i = 0; i < BAR_COUNT; i++) {
+          // Map bar index to frequency range (logarithmic)
+          const freqRatio = i / (BAR_COUNT - 1);
+          const logMin = Math.log10(MIN_FREQ);
+          const logMax = Math.log10(MAX_FREQ);
+          const centerFreq = Math.pow(10, logMin + freqRatio * (logMax - logMin));
 
-        // Get magnitude directly from processed spectrum (already 0-1 normalized)
-        const magnitude = barIndex < spectrum.length ? spectrum[barIndex] : 0;
+          // Find the spectrum bin for this frequency
+          const binIndex = freqToBar(centerFreq);
 
-        const x = padding.left + normalizedIndex * graphWidth;
-        const barHeight = magnitude * graphHeight;
-        const y = height - padding.bottom - barHeight;
+          // Average a few bins around the center for smoother bars
+          let magnitude = 0;
+          const binRange = Math.max(1, Math.floor(bassBarCount / BAR_COUNT / 2));
+          let count = 0;
+          for (let b = -binRange; b <= binRange; b++) {
+            const idx = binIndex + b;
+            if (idx >= 0 && idx < spectrum.length) {
+              magnitude += spectrum[idx];
+              count++;
+            }
+          }
+          magnitude = count > 0 ? magnitude / count : 0;
 
-        if (i === 0) {
-          ctx.moveTo(x, y);
-        } else {
-          ctx.lineTo(x, y);
+          // Update peak hold
+          if (magnitude >= peakHold[i]) {
+            peakHold[i] = magnitude;
+            peakHoldCounters[i] = peakHoldTime; // Reset hold counter
+          } else {
+            // Decay peak after hold time
+            if (peakHoldCounters[i] > 0) {
+              peakHoldCounters[i]--;
+            } else {
+              peakHold[i] = Math.max(0, peakHold[i] - peakDecayRate);
+            }
+          }
+
+          // Calculate bar position and size
+          const x = padding.left + i * (barWidth + barGap);
+          const barHeight = magnitude * graphHeight;
+          const y = height - padding.bottom - barHeight;
+
+          // Draw filled bar with gradient
+          ctx.fillStyle = cachedGradient!;
+          ctx.fillRect(x, y, barWidth, barHeight);
+
+          // Draw bar outline
+          ctx.strokeStyle = 'rgba(139, 92, 246, 0.9)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x, y, barWidth, barHeight);
+
+          // Draw peak hold indicator
+          const peakHeight = peakHold[i] * graphHeight;
+          const peakY = height - padding.bottom - peakHeight;
+          if (peakHeight > barHeight + 2) { // Only show if peak is above current bar
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.fillRect(x, peakY, barWidth, 2);
+          }
+
+          // Draw frequency label below bar (only for some bars to avoid clutter)
+          if (i % 3 === 0 || i === BAR_COUNT - 1) {
+            ctx.fillStyle = '#606060';
+            ctx.font = '9px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillText(`${Math.round(centerFreq)}`, x + barWidth / 2, height - padding.bottom + 5);
+          }
         }
+      } else {
+        // CURVE MODE: Draw bass spectrum as filled area (original)
+        ctx.beginPath();
+
+        // Start from bottom left
+        ctx.moveTo(padding.left, height - padding.bottom);
+
+        for (let i = 0; i < bassBarCount; i++) {
+          const barIndex = BASS_START_BAR + i;
+          const normalizedIndex = i / (bassBarCount - 1);
+
+          // Get magnitude directly from processed spectrum (already 0-1 normalized)
+          const magnitude = barIndex < spectrum.length ? spectrum[barIndex] : 0;
+
+          // Calculate position
+          const x = padding.left + normalizedIndex * graphWidth;
+          const barHeight = magnitude * graphHeight;
+          const y = height - padding.bottom - barHeight;
+
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+
+        // Complete the path
+        ctx.lineTo(width - padding.right, height - padding.bottom);
+        ctx.lineTo(padding.left, height - padding.bottom);
+        ctx.closePath();
+
+        ctx.fillStyle = cachedGradient;
+        ctx.fill();
+
+        // Draw outline
+        ctx.strokeStyle = 'rgba(139, 92, 246, 0.9)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+
+        for (let i = 0; i < bassBarCount; i++) {
+          const barIndex = BASS_START_BAR + i;
+          const normalizedIndex = i / (bassBarCount - 1);
+
+          // Get magnitude directly from processed spectrum (already 0-1 normalized)
+          const magnitude = barIndex < spectrum.length ? spectrum[barIndex] : 0;
+
+          const x = padding.left + normalizedIndex * graphWidth;
+          const barHeight = magnitude * graphHeight;
+          const y = height - padding.bottom - barHeight;
+
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.stroke();
       }
-      ctx.stroke();
 
-      // Draw frequency labels
-      ctx.fillStyle = '#606060';
-      ctx.font = '10px monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
+      // Draw frequency labels (only in curve mode - bars mode draws its own)
+      if (displayMode === 'curve') {
+        ctx.fillStyle = '#606060';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
 
-      for (const freq of FREQ_LABELS) {
-        const x = padding.left + (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * graphWidth;
-        ctx.fillText(`${freq}`, x, height - padding.bottom + 5);
+        for (const freq of FREQ_LABELS) {
+          const x = padding.left + (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * graphWidth;
+          ctx.fillText(`${freq}`, x, height - padding.bottom + 5);
+        }
       }
 
       // Draw dB labels
@@ -431,6 +526,17 @@
     on:mouseleave={handleMouseLeave}
   >
     <canvas bind:this={canvas}></canvas>
+
+    <!-- Display Mode Toggle -->
+    <button
+      class="mode-toggle"
+      on:click={toggleDisplayMode}
+      title="Toggle between Curve and Bars display"
+      aria-label="Toggle display mode"
+    >
+      <span class="toggle-label">{displayMode === 'curve' ? 'CURVE' : 'BARS'}</span>
+      <span class="toggle-indicator" class:bars-mode={displayMode === 'bars'}></span>
+    </button>
 
     <!-- Frequency Cursor -->
     {#if cursorVisible && cursorFreq > 0}
@@ -585,5 +691,48 @@
     font-size: 10px;
     font-family: monospace;
     color: var(--text-secondary);
+  }
+
+  /* Display Mode Toggle */
+  .mode-toggle {
+    position: absolute;
+    top: 3px;
+    right: 15px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    background: rgba(30, 35, 45, 0.9);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 4px;
+    color: #a0a0a0;
+    font-size: 10px;
+    font-family: monospace;
+    cursor: pointer;
+    z-index: 20;
+    transition: all 0.15s ease;
+  }
+
+  .mode-toggle:hover {
+    background: rgba(40, 50, 70, 0.95);
+    border-color: rgba(139, 92, 246, 0.6);
+    color: #ffffff;
+  }
+
+  .toggle-label {
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+
+  .toggle-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #8b5cf6;
+    transition: background 0.15s ease;
+  }
+
+  .toggle-indicator.bars-mode {
+    background: #22c55e;
   }
 </style>
