@@ -1,10 +1,11 @@
 # AUDIO_PRIME
 
-> Professional Real-Time Audio Spectrum Analyzer & Visualizer
+> Professional Real-Time Audio Spectrum Analyzer & Visualizer for Linux
 
 A modern, high-performance audio analysis application built with Electron + Svelte 5, featuring studio-grade metering, advanced visualizations, and Spotify integration.
 
-![Version](https://img.shields.io/badge/version-1.2.0-blue)
+![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Platform](https://img.shields.io/badge/platform-Linux-orange)
 ![Electron](https://img.shields.io/badge/electron-35+-green)
 ![TypeScript](https://img.shields.io/badge/typescript-5.7+-blue)
 ![Svelte](https://img.shields.io/badge/svelte-5+-orange)
@@ -17,6 +18,30 @@ A modern, high-performance audio analysis application built with Electron + Svel
   <br>
   <em>Full application layout with spectrum analyzer, LUFS metering, BPM detection, voice analysis, and Spotify integration</em>
 </p>
+
+---
+
+## Platform Support
+
+**AUDIO_PRIME is a Linux-only application.**
+
+| Platform | Status | Reason |
+|----------|--------|--------|
+| Linux | ✅ Supported | Native PulseAudio/PipeWire access via `parec` |
+| macOS | ❌ Not Supported | Chromium limits system audio to mono only |
+| Windows | ❌ Not Supported | No viable system audio capture path in Electron |
+
+### Why Linux Only?
+
+Professional audio analysis requires **stereo capture** for features like the goniometer, stereo correlation, and M/S metering. After extensive development effort, we found:
+
+- **Linux**: Direct access to PulseAudio/PipeWire via `parec` subprocess provides full stereo audio capture outside of Chromium's sandbox.
+
+- **macOS**: Apple's ScreenCaptureKit API supports stereo, but Chromium's `getDisplayMedia()` implementation only returns mono audio. Native Swift subprocesses can't inherit TCC (screen recording) permissions. A proper fix would require a native Node.js addon—significant complexity for uncertain results.
+
+- **Windows**: Similar limitations exist with WASAPI loopback capture in Electron's sandboxed environment.
+
+For cross-platform pro audio applications, native development (Swift/C++) is the appropriate choice. Electron excels for many use cases, but system audio capture for professional analysis isn't one of them.
 
 ---
 
@@ -62,26 +87,24 @@ A modern, high-performance audio analysis application built with Electron + Svel
 
 ### Download (Recommended)
 
-Download the latest release for your platform:
-- **Linux**: `.AppImage` (universal), `.deb` (Ubuntu/Debian), `.rpm` (Fedora/RHEL)
-- **macOS**: `.dmg` (Intel & Apple Silicon)
+Download the latest release:
+- **AppImage** - Universal Linux (recommended)
+- **.deb** - Ubuntu, Debian, Pop!_OS, Linux Mint
+- **.rpm** - Fedora, RHEL, CentOS, openSUSE
 
 See [Releases](https://github.com/magicat777/AUDIO_PRIME/releases)
 
-**macOS Users**: On first launch, grant Screen Recording permission when prompted. This is required for system audio capture using ScreenCaptureKit. Go to System Settings > Privacy & Security > Screen Recording and enable AUDIO_PRIME
+### System Requirements
+
+- **OS**: Linux (Ubuntu 20.04+, Fedora 35+, or equivalent)
+- **Audio**: PipeWire or PulseAudio with `parec` command
+- **Display**: 1920x1080 or higher recommended
 
 ### Build from Source
 
-#### Prerequisites
-- **Node.js** 18+ and npm
-- **Linux**: PipeWire or PulseAudio with `parec` command (typically pre-installed)
-- **macOS**:
-  - macOS 12.3+ (Monterey or later)
-  - Xcode Command Line Tools for building native audio capture module
-  - Screen Recording permission (System Settings > Privacy & Security > Screen Recording)
-
-#### Setup
 ```bash
+# Prerequisites: Node.js 18+ and npm
+
 # Clone repository
 git clone https://github.com/magicat777/AUDIO_PRIME.git
 cd AUDIO_PRIME
@@ -100,26 +123,20 @@ npm run build
 
 ## Spotify Setup
 
-**Note:** Spotify integration is optional. The app works fully without it - this feature only adds "Now Playing" information and playback controls.
+Spotify integration requires you to create your own Spotify Developer application (free):
 
-### For End Users (Downloaded Builds)
-The Spotify integration requires API credentials. If you want to enable this feature:
-
-1. Create a free Spotify Developer account at [developer.spotify.com](https://developer.spotify.com/dashboard)
-2. Create a new app and get your Client ID and Client Secret
-3. Add `http://127.0.0.1:8888/callback` as a Redirect URI in your app settings
-4. Create a `.env` file in the app's resources directory with:
+1. Create an app at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard)
+2. Add `http://127.0.0.1:8888/callback` as a Redirect URI
+3. Create `~/.config/audio-prime/.env`:
    ```
    SPOTIFY_CLIENT_ID=your_client_id_here
    SPOTIFY_CLIENT_SECRET=your_client_secret_here
    ```
-5. Restart the application
-6. Click "Connect to Spotify" in the Spotify panel
+4. Restart AUDIO_PRIME and click "Connect to Spotify"
 
-### For Developers (Building from Source)
-Create a `.env` file in the project root with your Spotify API credentials.
+See the [User Guide](docs/USER_GUIDE.md#spotify-integration) for detailed instructions.
 
-**Note:** Spotify Premium is required for playback controls. Free accounts can view "Now Playing" information only.
+**Note:** Spotify Premium is required for playback controls. Free accounts can view now-playing info.
 
 ---
 
@@ -151,49 +168,19 @@ Use the sidebar toggles to show/hide panels:
 
 ---
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         AUDIO_PRIME                             │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │                    SPECTRUM ANALYZER                     │   │
-│  │              512 bars • 20Hz-20kHz • Logarithmic        │   │
-│  └─────────────────────────────────────────────────────────┘   │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────┐ │
-│  │   VU L   │ │   VU R   │ │   LUFS   │ │   BPM    │ │ VOICE │ │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └───────┘ │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────┐ ┌─────────────────────────────────┐   │
-│  │    BASS DETAIL      │ │          WATERFALL              │   │
-│  │    20-500Hz         │ │       Time-Frequency            │   │
-│  └─────────────────────┘ └─────────────────────────────────┘   │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │  SPOTIFY: Track Name • Artist • Album       ◀ ▶ ▶▶     │   │
-│  └─────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
 ## Technical Details
 
 ### Audio Pipeline
-1. **Capture**:
-   - **Linux**: `parec` subprocess captures system audio via PipeWire/PulseAudio
-   - **macOS**: ScreenCaptureKit native module captures system audio output (macOS 12.3+)
-2. **Transport**: Raw PCM float32 data (48kHz stereo) streamed to Electron main process
+1. **Capture**: `parec` subprocess captures system audio via PipeWire/PulseAudio
+2. **Transport**: Raw PCM float32 data streamed to Electron main process
 3. **Processing**: FFT analysis in AudioEngine with multi-resolution support
-4. **Rendering**: 60 FPS WebGL2/Canvas rendering in Svelte 5 components
+4. **Rendering**: 60 FPS canvas rendering in Svelte 5 components
 
 ### Performance
 - **Frame Rate**: Stable 60 FPS
 - **Audio Latency**: ~10ms end-to-end
 - **FFT Processing**: ~1.5ms per frame
-- **Memory Usage**: ~150MB typical (with leak detection)
+- **Memory Usage**: ~150MB typical
 
 ### Tech Stack
 | Component | Technology |
@@ -202,8 +189,8 @@ Use the sidebar toggles to show/hide panels:
 | UI | Svelte 5 |
 | Build | Vite 6 |
 | Language | TypeScript 5.7 (strict mode) |
-| Rendering | WebGL2 + Canvas 2D |
-| Audio Capture | ScreenCaptureKit (macOS 12.3+), PulseAudio/PipeWire (Linux) |
+| Rendering | Canvas 2D |
+| Audio | PulseAudio/PipeWire (parec) |
 | Testing | Vitest |
 | Linting | ESLint + Security plugins |
 
@@ -215,7 +202,12 @@ Use the sidebar toggles to show/hide panels:
 AUDIO_PRIME/
 ├── electron/              # Main process
 │   ├── main.ts            # Electron entry, IPC handlers, auto-updater
-│   └── preload.ts         # Context bridge
+│   ├── preload.ts         # Context bridge
+│   └── audio/             # Audio capture module
+│       ├── AudioCapture.ts
+│       ├── LinuxCapture.ts
+│       ├── types.ts
+│       └── index.ts
 ├── src/
 │   ├── components/        # Svelte 5 components
 │   │   ├── layout/        # AppShell, ErrorBoundary
@@ -229,10 +221,7 @@ AUDIO_PRIME/
 ├── docs/                  # Documentation
 │   ├── USER_GUIDE.md      # Comprehensive user documentation
 │   ├── INSTALLATION.md    # Installation instructions
-│   ├── TROUBLESHOOTING.md # Common issues & solutions
-│   └── DELIVERY_PLAN.md   # Commercial release roadmap
-├── build/                 # Build resources
-│   └── entitlements.mac.plist
+│   └── TROUBLESHOOTING.md # Common issues & solutions
 ├── .github/workflows/     # CI/CD
 │   └── security.yml       # Automated security scanning
 ├── CHANGELOG.md           # Version history
@@ -242,38 +231,8 @@ AUDIO_PRIME/
 
 ---
 
-## Release Status
+## Security
 
-### Current Release: v1.2.0 (macOS + Linux)
-
-| Phase | Status | Description |
-|-------|--------|-------------|
-| Phase 1 | ✅ Complete | Dependency & Framework Security |
-| Phase 2 | ✅ Complete | Code Quality & Static Analysis |
-| Phase 3 | ✅ Complete | API & Authentication Security |
-| Phase 4 | ✅ Complete | Performance & Stability |
-| Phase 5 | ✅ Complete | Testing & Documentation |
-| Phase 6 | ✅ Complete | Distribution & Signing |
-| Phase 7 | ✅ Complete | Pre-Release Testing |
-| Phase 8 | ✅ Complete | Delivery |
-
-### Platform Support
-| Platform | Status | Version |
-|----------|--------|---------|
-| Linux | ✅ Released | v1.1.0+ |
-| macOS | ✅ Released | v1.2.0 |
-| Windows | 📋 Planned | v1.3.0 |
-
-### Build Formats
-| Platform | Format | Status |
-|----------|--------|--------|
-| Linux | AppImage | ✅ Available |
-| Linux | .deb | ✅ Available |
-| Linux | .rpm | ✅ Available |
-| macOS | .dmg (x64 + arm64) | ✅ Available |
-| Windows | NSIS installer | 📋 Coming v1.3.0 |
-
-### Security Hardening
 - ✅ Electron 35 with hardened security flags
 - ✅ Content Security Policy (CSP)
 - ✅ Context isolation & disabled node integration
@@ -289,7 +248,7 @@ AUDIO_PRIME/
 ### Commands
 ```bash
 npm run dev          # Start dev server with hot reload
-npm run build        # Build for production (all platforms)
+npm run build        # Build for production
 npm run test         # Run test suite
 npm run lint         # Run ESLint
 npm run type-check   # TypeScript validation
@@ -311,6 +270,8 @@ MIT License - See [LICENSE](LICENSE) file for details.
 - [Electron](https://www.electronjs.org/)
 - [Svelte](https://svelte.dev/)
 - [Vite](https://vitejs.dev/)
+- [PulseAudio](https://www.freedesktop.org/wiki/Software/PulseAudio/)
+- [PipeWire](https://pipewire.org/)
 - [Spotify Web API](https://developer.spotify.com/documentation/web-api)
 - ITU-R BS.1770-4 (LUFS Standard)
 - EBU R128 (Broadcast Loudness)

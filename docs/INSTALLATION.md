@@ -1,27 +1,32 @@
 # AUDIO_PRIME Installation Guide
 
+**AUDIO_PRIME is a Linux-only application.**
+
 ## System Requirements
 
 ### Minimum Requirements
-- **OS**: Ubuntu 20.04+ / Debian 11+ / macOS 12+
+- **OS**: Ubuntu 20.04+ / Debian 11+ / Fedora 35+
 - **CPU**: Dual-core 2.0 GHz
 - **RAM**: 4 GB
 - **Display**: 1280x720 resolution
+- **Audio**: PulseAudio or PipeWire with `parec` command
 
 ### Recommended Requirements
-- **OS**: Ubuntu 22.04+ / macOS 13+
+- **OS**: Ubuntu 22.04+ / Fedora 38+
 - **CPU**: Quad-core 2.5 GHz+
 - **RAM**: 8 GB
 - **Display**: 1920x1080 or higher
-- **Audio**: PulseAudio or PipeWire (Linux)
+- **Audio**: PipeWire (modern Linux distributions)
 
 ---
 
-## Linux Installation
+## Installation Methods
 
-### AppImage (Universal)
+### AppImage (Universal - Recommended)
 
-1. Download the latest `.AppImage` file from the releases page
+The AppImage works on most Linux distributions without installation.
+
+1. Download the latest `.AppImage` file from [Releases](https://github.com/magicat777/AUDIO_PRIME/releases)
 2. Make it executable:
    ```bash
    chmod +x AUDIO_PRIME-*.AppImage
@@ -33,10 +38,12 @@
 
 ### Debian/Ubuntu (.deb)
 
-1. Download the latest `.deb` file from the releases page
+For Ubuntu, Debian, Pop!_OS, Linux Mint, and derivatives.
+
+1. Download the latest `.deb` file from [Releases](https://github.com/magicat777/AUDIO_PRIME/releases)
 2. Install using dpkg:
    ```bash
-   sudo dpkg -i audio-prime_*.deb
+   sudo dpkg -i AUDIO_PRIME-*.deb
    ```
 3. Fix any dependency issues:
    ```bash
@@ -47,9 +54,45 @@
    audio-prime
    ```
 
-### Audio Permissions (Linux)
+### Fedora/RHEL (.rpm)
 
-AUDIO_PRIME requires access to system audio. Ensure your user is in the `audio` group:
+For Fedora, RHEL, CentOS, openSUSE, and derivatives.
+
+1. Download the latest `.rpm` file from [Releases](https://github.com/magicat777/AUDIO_PRIME/releases)
+2. Install using dnf:
+   ```bash
+   sudo dnf install AUDIO_PRIME-*.rpm
+   ```
+3. Launch from the application menu or run:
+   ```bash
+   audio-prime
+   ```
+
+---
+
+## Audio Setup
+
+### Verify PulseAudio/PipeWire
+
+AUDIO_PRIME uses `parec` to capture system audio. Verify it's available:
+
+```bash
+which parec
+```
+
+If not found, install PulseAudio utilities:
+
+```bash
+# Ubuntu/Debian
+sudo apt install pulseaudio-utils
+
+# Fedora
+sudo dnf install pulseaudio-utils
+```
+
+### Audio Group Permissions
+
+Ensure your user is in the `audio` group:
 
 ```bash
 sudo usermod -a -G audio $USER
@@ -57,59 +100,48 @@ sudo usermod -a -G audio $USER
 
 Log out and back in for the change to take effect.
 
----
+### Selecting Audio Source
 
-## macOS Installation
+1. Launch AUDIO_PRIME
+2. Click the audio device dropdown in the header
+3. Select a "Monitor" source to capture system audio output
+4. Select an "Input" source to capture microphone input
 
-### DMG Installation
-
-1. Download the latest `.dmg` file from the releases page
-2. Open the DMG file
-3. Drag AUDIO_PRIME to your Applications folder
-4. First launch: Right-click the app and select "Open" to bypass Gatekeeper
-
-### Microphone/Audio Permissions
-
-On first launch, macOS will request permission to access audio input. Grant this permission in:
-**System Preferences > Security & Privacy > Privacy > Microphone**
+**Tip:** Monitor sources with "Running" state are currently playing audio.
 
 ---
 
 ## Spotify Integration Setup
 
-AUDIO_PRIME includes optional Spotify integration for Now Playing display.
+AUDIO_PRIME includes optional Spotify integration. See the [User Guide](USER_GUIDE.md#spotify-integration) for detailed setup instructions.
 
-### Prerequisites
-- Spotify Premium account (required for playback control)
-- Spotify Developer application credentials
+**Quick Setup:**
 
-### Configuration
-
-1. Create a Spotify Developer application at https://developer.spotify.com/dashboard
-2. Add `http://127.0.0.1:8888/callback` to your Redirect URIs
-3. Create a `.env` file in the AUDIO_PRIME directory:
+1. Create a Spotify Developer app at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard)
+2. Add `http://127.0.0.1:8888/callback` as a Redirect URI
+3. Create `~/.config/audio-prime/.env`:
    ```
    SPOTIFY_CLIENT_ID=your_client_id_here
    SPOTIFY_CLIENT_SECRET=your_client_secret_here
    ```
-4. Restart AUDIO_PRIME
-5. Click "Connect to Spotify" in the Spotify panel
+4. Restart AUDIO_PRIME and click "Connect to Spotify"
 
 ---
 
-## Development Setup
+## Build from Source
 
 ### Prerequisites
 - Node.js 18+
 - npm 9+
 - Git
+- PulseAudio or PipeWire
 
-### Build from Source
+### Build Steps
 
 ```bash
 # Clone the repository
-git clone https://github.com/magicat777/live-audio-analyzer.git
-cd live-audio-analyzer/AUDIO_PRIME
+git clone https://github.com/magicat777/AUDIO_PRIME.git
+cd AUDIO_PRIME
 
 # Install dependencies
 npm install
@@ -119,6 +151,31 @@ npm run dev
 
 # Build for production
 npm run build
+```
+
+Production builds are output to the `release/` directory.
+
+---
+
+## Uninstallation
+
+### AppImage
+Simply delete the AppImage file.
+
+### Debian/Ubuntu
+```bash
+sudo apt remove audio-prime
+```
+
+### Fedora/RHEL
+```bash
+sudo dnf remove audio-prime
+```
+
+### Configuration Files
+To remove user configuration:
+```bash
+rm -rf ~/.config/audio-prime
 ```
 
 ---

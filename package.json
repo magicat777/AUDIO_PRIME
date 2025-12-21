@@ -1,13 +1,12 @@
 {
   "name": "audio-prime",
-  "version": "1.2.0",
-  "description": "Professional web-based audio spectrum analyzer with full OMEGA feature parity",
+  "version": "1.1.0",
+  "description": "Professional real-time audio spectrum analyzer for Linux with LUFS metering, beat detection, and Spotify integration",
   "homepage": "https://github.com/magicat777/AUDIO_PRIME",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "npm run build:native && tsc && vite build && electron-builder",
-    "build:native": "node -e \"if (process.platform === 'darwin') require('child_process').execSync('./native/macos/build.sh', {stdio: 'inherit'})\"",
+    "build": "tsc && vite build && electron-builder",
     "preview": "vite preview",
     "electron:dev": "vite build && electron .",
     "electron:build": "electron-builder",
@@ -80,22 +79,13 @@
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*",
-      "build/macos/**/*"
+      "dist-electron/**/*"
     ],
     "extraResources": [
       {
         "from": "build/.env.production",
         "to": ".env"
-      },
-      {
-        "from": "build/macos",
-        "to": "build/macos",
-        "filter": ["**/*"]
       }
-    ],
-    "asarUnpack": [
-      "build/macos/**/*"
     ],
     "publish": {
       "provider": "github",
@@ -129,44 +119,6 @@
         "pulseaudio-libs",
         "alsa-lib"
       ]
-    },
-    "mac": {
-      "target": [
-        {
-          "target": "dmg",
-          "arch": ["x64", "arm64"]
-        }
-      ],
-      "category": "public.app-category.music",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist",
-      "icon": "assets/icon.png"
-    },
-    "dmg": {
-      "contents": [
-        {
-          "x": 130,
-          "y": 220
-        },
-        {
-          "x": 410,
-          "y": 220,
-          "type": "link",
-          "path": "/Applications"
-        }
-      ]
-    },
-    "win": {
-      "target": [
-        "nsis"
-      ],
-      "icon": "assets/icon.png"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
     }
   }
 }

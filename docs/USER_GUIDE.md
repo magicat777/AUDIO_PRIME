@@ -2,7 +2,7 @@
 
 ## Professional Real-Time Audio Analysis & Visualization
 
-**Version 1.0** | **Technical Reference for Audio Professionals**
+**Version 1.1** | **Technical Reference for Audio Professionals**
 
 ---
 
@@ -822,19 +822,136 @@ Seven-band analysis with peak hold:
 
 ## Spotify Integration
 
-Optional Spotify Web API integration for now-playing display.
+Optional Spotify Web API integration for displaying currently playing track information and controlling playback.
 
 ### Features
 
-- Album artwork (64×64)
-- Track, artist, album information
-- Playback controls (previous, play/pause, next)
-- Progress bar with seek capability
-- Play state indicator
+- **Album Artwork:** High-quality album art display
+- **Track Information:** Song title, artist name, album name
+- **Playback Controls:** Previous, play/pause, next track
+- **Progress Bar:** Visual progress with click-to-seek
+- **Play State:** Real-time playing/paused indicator
 
-### Setup
+### Requirements
 
-Click "Connect to Spotify" to initiate OAuth2 authorization. Requires Spotify Premium account for playback control.
+- **Spotify Account:** Free accounts can view now-playing info
+- **Spotify Premium:** Required for playback controls (play, pause, skip, seek)
+- **Spotify Developer App:** You must create your own Spotify app (free, see setup below)
+
+### Why Do I Need My Own Spotify App?
+
+Spotify's API requires each application to be registered. Due to Spotify's API policies, AUDIO_PRIME cannot provide shared credentials for all users. Instead, you create your own free Spotify Developer application, which gives you full access to the Spotify integration features.
+
+This takes about 5 minutes to set up and only needs to be done once.
+
+### Setup Instructions
+
+#### Step 1: Create a Spotify Developer Account
+
+1. Go to [developer.spotify.com](https://developer.spotify.com/)
+2. Log in with your existing Spotify account (or create one)
+3. Accept the Developer Terms of Service
+
+#### Step 2: Create a New App
+
+1. Go to your [Spotify Dashboard](https://developer.spotify.com/dashboard)
+2. Click **"Create App"**
+3. Fill in the app details:
+   - **App name:** `AUDIO_PRIME` (or any name you prefer)
+   - **App description:** `Personal audio analyzer integration`
+   - **Website:** Leave blank or enter any URL
+   - **Redirect URI:** `http://127.0.0.1:8888/callback` **(IMPORTANT: Must be exact)**
+4. Check the box to agree to the Terms of Service
+5. Click **"Save"**
+
+#### Step 3: Get Your Credentials
+
+1. In your new app's dashboard, click **"Settings"**
+2. You'll see your **Client ID** - copy this
+3. Click **"View client secret"** and copy the **Client Secret**
+
+#### Step 4: Configure AUDIO_PRIME
+
+Create a configuration file at `~/.config/audio-prime/.env`:
+
+```bash
+# Create the directory if it doesn't exist
+mkdir -p ~/.config/audio-prime
+
+# Create the .env file
+nano ~/.config/audio-prime/.env
+```
+
+Add your credentials:
+
+```
+SPOTIFY_CLIENT_ID=your_client_id_here
+SPOTIFY_CLIENT_SECRET=your_client_secret_here
+```
+
+Save the file and restart AUDIO_PRIME.
+
+#### Step 5: Connect to Spotify
+
+1. Launch AUDIO_PRIME
+2. In the Spotify panel, click **"Connect to Spotify"**
+3. A browser window will open for Spotify authorization
+4. Log in and click **"Agree"** to authorize the app
+5. The browser will show "Connected to Spotify!" and you can close it
+6. AUDIO_PRIME will now display your currently playing track
+
+### Troubleshooting
+
+#### "Spotify credentials not configured"
+
+Your `.env` file is missing or not being read. Check:
+- File location: `~/.config/audio-prime/.env`
+- File contains both `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET`
+- No extra spaces around the `=` sign
+- Restart AUDIO_PRIME after creating/editing the file
+
+#### "Invalid redirect URI"
+
+The redirect URI in your Spotify app settings doesn't match. Ensure it's exactly:
+```
+http://127.0.0.1:8888/callback
+```
+Note: Use `127.0.0.1`, not `localhost`.
+
+#### Browser doesn't open
+
+On some Linux systems, try running:
+```bash
+xdg-settings set default-web-browser firefox.desktop
+```
+(Replace `firefox.desktop` with your preferred browser)
+
+#### Playback controls don't work
+
+- Playback controls require **Spotify Premium**
+- You must have an **active Spotify session** (music playing on any device)
+- Free accounts can still see now-playing information
+
+#### "No track playing" but music is playing
+
+- Ensure you're playing music through **Spotify** (not local files)
+- Check that you authorized the correct Spotify account
+- Try disconnecting and reconnecting
+
+### Security Notes
+
+- Your Spotify credentials are stored locally in `~/.config/audio-prime/.env`
+- OAuth tokens are encrypted using your system's secure storage
+- AUDIO_PRIME never transmits your credentials to any third party
+- You can revoke access anytime at [spotify.com/account/apps](https://www.spotify.com/account/apps/)
+
+### Data Usage
+
+AUDIO_PRIME uses the following Spotify data:
+- **Currently playing track:** Song name, artist, album, artwork
+- **Playback state:** Playing/paused, progress position
+
+No listening history, playlists, or personal data is accessed or stored.
 
 ---
 
@@ -888,4 +1005,4 @@ AUDIO_PRIME implements analysis methods compliant with:
 
 *AUDIO_PRIME - Professional Audio Analysis*
 
-*Document Version 1.0*
+*Document Version 1.1*

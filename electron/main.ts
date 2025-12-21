@@ -9,10 +9,12 @@ import { app, BrowserWindow, ipcMain, shell, safeStorage, session } from 'electr
 // Suppress noisy Chromium DevTools errors (Autofill, etc.)
 app.commandLine.appendSwitch('disable-features', 'AutofillServerCommunication');
 import { join } from 'path';
-import { spawn, ChildProcess } from 'child_process';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { createServer, Server, IncomingMessage, ServerResponse } from 'http';
+
+// Platform-agnostic audio capture
+import { createAudioCapture, AudioCapture, AudioDevice } from './audio';
 import { createHash, randomBytes } from 'crypto';
 import { URL } from 'url';
 import * as os from 'os';
@@ -52,46 +54,11 @@ process.on('unhandledRejection', (reason: unknown) => {
   // In production, this would also send to crash reporting service
 });
 
-// Audio capture process
-let audioProcess: ChildProcess | null = null;
+// Audio capture instance (platform-specific)
+let audioCapture: AudioCapture | null = null;
 
 // Window reference
 let mainWindow: BrowserWindow | null = null;
-
-// Helper function to get the AudioCapture binary path
-// Works in both development and production (packaged app)
-function getAudioCapturePath(): string {
-  // In production (packaged), the binary is in app.asar.unpacked or resources
-  // In development, it's in the build directory
-  const isDev = process.env.VITE_DEV_SERVER_URL !== undefined;
-
-  if (isDev) {
-    // Development: use the build directory
-    return join(__dirname, '../build/macos/AudioCapture');
-  } else {
-    // Production: try multiple locations
-    const paths = [
-      // First try: app.asar.unpacked (if binary is marked as unpacked)
-      join(process.resourcesPath, 'app.asar.unpacked', 'build', 'macos', 'AudioCapture'),
-      // Second try: directly in resources (from extraResources config)
-      join(process.resourcesPath, 'build', 'macos', 'AudioCapture'),
-      // Third try: relative to dist-electron
-      join(__dirname, '../build/macos/AudioCapture'),
-    ];
-
-    // Return the first path that exists
-    for (const path of paths) {
-      if (fs.existsSync(path)) {
-        console.log('Found AudioCapture binary at:', path);
-        return path;
-      }
-    }
-
-    // Fallback to first path and log warning
-    console.warn('AudioCapture binary not found, using fallback path:', paths[0]);
-    return paths[0];
-  }
-}
 
 // Spotify OAuth state
 let oauthServer: Server | null = null;
@@ -156,230 +123,52 @@ const IPC = {
   SPOTIFY_REPEAT: 'spotify:repeat',
 };
 
-interface AudioDevice {
-  id: string;
-  name: string;
-  description: string;
-  type: 'monitor' | 'input';
-  sampleRate: number;
-  channels: number;
-  format: string;
-  state: 'running' | 'idle' | 'suspended';
-}
-
-// Platform-specific audio source enumeration
-async function getAudioSourcesLinux(): Promise<AudioDevice[]> {
-  try {
-    const { stdout } = await execAsync('pactl list sources 2>/dev/null');
-    const devices: AudioDevice[] = [];
-
-    // Parse the detailed output
-    const sourceBlocks = stdout.split('Source #');
-
-    for (const block of sourceBlocks) {
-      if (!block.trim()) continue;
-
-      // Extract fields using regex
-      const nameMatch = block.match(/Name:\s*(.+)/);
-      const descMatch = block.match(/Description:\s*(.+)/);
-      const sampleMatch = block.match(/Sample Specification:\s*(\S+)\s+(\d+)ch\s+(\d+)Hz/);
-      const stateMatch = block.match(/State:\s*(\S+)/);
-
-      if (nameMatch) {
-        const id = nameMatch[1].trim();
-        const description = descMatch ? descMatch[1].trim() : id;
-        const isMonitor = id.includes('.monitor');
-
-        // Parse sample specification
-        let format = 's16le';
-        let channels = 2;
-        let sampleRate = 48000;
-        if (sampleMatch) {
-          format = sampleMatch[1];
-          channels = parseInt(sampleMatch[2], 10);
-          sampleRate = parseInt(sampleMatch[3], 10);
-        }
-
-        // Parse state
-        let state: 'running' | 'idle' | 'suspended' = 'idle';
-        if (stateMatch) {
-          const stateStr = stateMatch[1].toLowerCase();
-          if (stateStr === 'running') state = 'running';
-          else if (stateStr === 'suspended') state = 'suspended';
-        }
-
-        // Create friendly short name from description
-        let name = description;
-        // Shorten common prefixes
-        name = name.replace('Monitor of ', '');
-        // Truncate very long names
-        if (name.length > 50) {
-          name = name.substring(0, 47) + '...';
-        }
-
-        devices.push({
-          id,
-          name,
-          description,
-          type: isMonitor ? 'monitor' : 'input',
-          sampleRate,
-          channels,
-          format,
-          state,
-        });
-      }
-    }
-
-    // Sort: running first, then monitors, then by name
-    devices.sort((a, b) => {
-      // Running devices first
-      if (a.state === 'running' && b.state !== 'running') return -1;
-      if (a.state !== 'running' && b.state === 'running') return 1;
-      // Then monitors
-      if (a.type === 'monitor' && b.type !== 'monitor') return -1;
-      if (a.type !== 'monitor' && b.type === 'monitor') return 1;
-      // Then alphabetically
-      return a.name.localeCompare(b.name);
-    });
-
-    return devices;
-  } catch (error) {
-    console.error('Error getting Linux audio sources:', error);
-    return [];
-  }
-}
-
-async function getAudioSourcesMacOS(): Promise<AudioDevice[]> {
-  try {
-    const audioCaptureBin = getAudioCapturePath();
-    const { stdout, stderr } = await execAsync(`"${audioCaptureBin}" --list 2>&1`);
-
-    const devices: AudioDevice[] = [];
-    const lines = (stdout + stderr).split('\n');
-
-    // Parse output format: "  UID: Name (X channels)"
-    for (const line of lines) {
-      const match = line.match(/^\s+(.+?):\s+(.+?)\s+\((\d+)\s+channels?\)/);
-      if (match) {
-        const id = match[1].trim();
-        const name = match[2].trim();
-        const channels = parseInt(match[3], 10);
-
-        devices.push({
-          id,
-          name,
-          description: name,
-          type: 'input',
-          sampleRate: 48000,
-          channels,
-          format: 'float32le',
-          state: 'idle',
-        });
-      }
-    }
-
-    return devices;
-  } catch (error) {
-    console.error('Error getting macOS audio sources:', error);
-    // Return default device
-    return [{
-      id: 'default',
-      name: 'Default Input',
-      description: 'System Default Audio Input',
-      type: 'input',
-      sampleRate: 48000,
-      channels: 2,
-      format: 'float32le',
-      state: 'idle',
-    }];
-  }
-}
-
+/**
+ * Get available audio devices using platform-specific capture
+ */
 async function getAudioSources(): Promise<AudioDevice[]> {
-  if (process.platform === 'darwin') {
-    return await getAudioSourcesMacOS();
-  } else if (process.platform === 'linux') {
-    return await getAudioSourcesLinux();
-  } else {
-    console.error('Unsupported platform:', process.platform);
-    return [];
+  // Create capture instance if needed
+  if (!audioCapture) {
+    audioCapture = createAudioCapture();
+    console.log('Audio capture initialized:', audioCapture.getPlatformName());
   }
+  return audioCapture.listDevices();
 }
 
-function startAudioCapture(deviceId: string): void {
-  if (audioProcess) {
-    audioProcess.kill();
+/**
+ * Start audio capture on the specified device
+ */
+function startAudioCaptureOnDevice(deviceId: string): void {
+  // Create capture instance if needed
+  if (!audioCapture) {
+    audioCapture = createAudioCapture();
+    console.log('Audio capture initialized:', audioCapture.getPlatformName());
   }
 
-  if (process.platform === 'darwin') {
-    // macOS: Use CoreAudio capture binary
-    const audioCaptureBin = getAudioCapturePath();
-    const args = deviceId !== 'default' ? [deviceId] : [];
+  // Register callbacks
+  audioCapture.onData((samples: Float32Array) => {
+    // Send to renderer process
+    mainWindow?.webContents.send(IPC.AUDIO_DATA, Array.from(samples));
+  });
 
-    audioProcess = spawn(audioCaptureBin, args);
+  audioCapture.onError((error: string) => {
+    console.error('Audio capture error:', error);
+  });
 
-    audioProcess.stdout?.on('data', (chunk: Buffer) => {
-      // Convert raw bytes to Float32Array
-      const samples = new Float32Array(chunk.buffer.slice(
-        chunk.byteOffset,
-        chunk.byteOffset + chunk.byteLength
-      ));
+  audioCapture.onClose((code: number | null) => {
+    console.log('Audio capture process exited with code:', code);
+  });
 
-      // Send to renderer process
-      mainWindow?.webContents.send(IPC.AUDIO_DATA, Array.from(samples));
-    });
-
-    audioProcess.stderr?.on('data', (data) => {
-      const message = data.toString();
-      // Filter out informational messages
-      if (!message.includes('Audio capture started') && !message.includes('INFO:')) {
-        console.error('Audio capture error:', message);
-      }
-    });
-
-    audioProcess.on('close', (code) => {
-      console.log('Audio capture process exited with code:', code);
-      audioProcess = null;
-    });
-  } else if (process.platform === 'linux') {
-    // Linux: Use parec for PipeWire/PulseAudio capture with low latency
-    audioProcess = spawn('parec', [
-      '--device', deviceId,
-      '--rate', '48000',
-      '--channels', '2',
-      '--format', 'float32le',
-      '--raw',
-      '--latency-msec', '10',  // Minimize capture latency
-    ]);
-
-    audioProcess.stdout?.on('data', (chunk: Buffer) => {
-      // Convert raw bytes to Float32Array
-      const samples = new Float32Array(chunk.buffer.slice(
-        chunk.byteOffset,
-        chunk.byteOffset + chunk.byteLength
-      ));
-
-      // Send to renderer process
-      mainWindow?.webContents.send(IPC.AUDIO_DATA, Array.from(samples));
-    });
-
-    audioProcess.stderr?.on('data', (data) => {
-      console.error('Audio capture error:', data.toString());
-    });
-
-    audioProcess.on('close', (code) => {
-      console.log('Audio capture process exited with code:', code);
-      audioProcess = null;
-    });
-  } else {
-    console.error('Unsupported platform for audio capture:', process.platform);
-  }
+  // Start capture
+  audioCapture.start(deviceId);
 }
 
+/**
+ * Stop audio capture
+ */
 function stopAudioCapture(): void {
-  if (audioProcess) {
-    audioProcess.kill();
-    audioProcess = null;
+  if (audioCapture) {
+    audioCapture.stop();
   }
 }
 
@@ -471,7 +260,7 @@ ipcMain.handle(IPC.AUDIO_DEVICES, async () => {
 });
 
 ipcMain.handle(IPC.AUDIO_START, (_, deviceId: string) => {
-  startAudioCapture(deviceId);
+  startAudioCaptureOnDevice(deviceId);
   return true;
 });
 
@@ -1458,10 +1247,9 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   stopAudioCapture();
-  // Quit the app on all platforms when window is closed
-  // AUDIO_PRIME is a single-window app, so keeping it running in the dock
-  // without a window doesn't make sense
-  app.quit();
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
 });
 
 app.on('before-quit', () => {
