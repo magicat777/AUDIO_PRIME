@@ -421,7 +421,8 @@
       // Renders at fixed internal resolution (800x300) for consistent quality
       // CSS scales the canvas to fit the display area
       if (waterfallCtx && waterfallWidth > 0 && waterfallHeight > 0) {
-        const wfPadding = { left: 55, right: 15, top: 22, bottom: 8 };
+        // Minimal padding - labels are HTML overlays outside the canvas
+        const wfPadding = { left: 0, right: 0, top: 0, bottom: 0 };
         const wfGraphWidth = waterfallWidth - wfPadding.left - wfPadding.right;
         const wfGraphHeight = waterfallHeight - wfPadding.top - wfPadding.bottom;
         const lineHeight = Math.max(1, Math.floor(wfGraphHeight / WATERFALL_HISTORY));
@@ -434,29 +435,7 @@
           // Pre-allocate ImageData for row rendering (at fixed resolution)
           waterfallRowImageData = waterfallCtx.createImageData(wfGraphWidth, lineHeight);
 
-          // Draw static labels (only on init/resize)
-          // Use larger font sizes since canvas is at fixed internal resolution (800x300)
-          // and CSS scales it to display size
-          waterfallCtx.fillStyle = '#808080';
-          waterfallCtx.font = '18px monospace';
-          waterfallCtx.textAlign = 'center';
-          waterfallCtx.textBaseline = 'top';
-
-          const wfFreqLabels = [20, 40, 60, 100, 150, 200];
-          for (const freq of wfFreqLabels) {
-            const x = wfPadding.left + (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * wfGraphWidth;
-            waterfallCtx.fillText(`${freq}`, x, 0);
-          }
-
-          // Time indicators on left side
-          waterfallCtx.fillStyle = '#707070';
-          waterfallCtx.font = '16px monospace';
-          waterfallCtx.textAlign = 'right';
-          waterfallCtx.textBaseline = 'top';
-          waterfallCtx.fillText('now', wfPadding.left - 5, wfPadding.top);
-          waterfallCtx.textBaseline = 'bottom';
-          waterfallCtx.fillText(`-${Math.round(WATERFALL_HISTORY / 60)}s`, wfPadding.left - 5, waterfallHeight - wfPadding.bottom);
-
+          // Labels are now rendered as HTML overlays for crisp text at any scale
           waterfallInitialized = true;
         }
 
@@ -564,7 +543,26 @@
         <span class="legend-high"></span>
       </span>
     </div>
-    <canvas bind:this={waterfallCanvas}></canvas>
+    <div class="waterfall-content">
+      <!-- Frequency scale (top) -->
+      <div class="wf-freq-scale">
+        <span style="left: 0%">20</span>
+        <span style="left: 30%">40</span>
+        <span style="left: 48%">60</span>
+        <span style="left: 70%">100</span>
+        <span style="left: 88%">150</span>
+        <span style="left: 100%">200</span>
+      </div>
+      <!-- Time scale (left) -->
+      <div class="wf-time-scale">
+        <span class="wf-time-now">now</span>
+        <span class="wf-time-past">-{Math.round(WATERFALL_HISTORY / 60)}s</span>
+      </div>
+      <!-- Canvas -->
+      <div class="wf-canvas-container">
+        <canvas bind:this={waterfallCanvas}></canvas>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -645,9 +643,62 @@
     background: linear-gradient(90deg, #ff8800, #ffffff);
   }
 
-  .waterfall-section canvas {
+  /* Waterfall content layout with HTML labels */
+  .waterfall-content {
     flex: 1;
+    display: grid;
+    grid-template-columns: 30px 1fr;
+    grid-template-rows: 16px 1fr;
+    gap: 2px;
+    min-height: 0;
+  }
+
+  .wf-freq-scale {
+    grid-column: 2;
+    grid-row: 1;
+    position: relative;
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+  }
+
+  .wf-freq-scale span {
+    position: absolute;
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+
+  .wf-time-scale {
+    grid-column: 1;
+    grid-row: 2;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding-right: 4px;
+    font-size: 9px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+  }
+
+  .wf-time-now {
+    padding-top: 2px;
+  }
+
+  .wf-time-past {
+    padding-bottom: 2px;
+  }
+
+  .wf-canvas-container {
+    grid-column: 2;
+    grid-row: 2;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .wf-canvas-container canvas {
     width: 100%;
+    height: 100%;
   }
 
   /* Frequency Cursor */
