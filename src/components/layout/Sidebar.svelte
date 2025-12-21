@@ -604,15 +604,6 @@
     cursor: not-allowed;
   }
 
-  .badge {
-    font-size: 0.65rem;
-    padding: 0.15rem 0.4rem;
-    background: var(--bg-tertiary);
-    border-radius: 2px;
-    color: var(--text-muted);
-    margin-left: auto;
-  }
-
   .badge-small {
     font-size: 0.6rem;
     padding: 0.1rem 0.3rem;
@@ -647,53 +638,6 @@
     font-family: var(--font-mono);
     font-size: 0.75rem;
     color: var(--text-primary);
-  }
-
-  /* Layout controls */
-  .layout-controls {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .layout-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    color: var(--text-secondary);
-    font-size: 0.8rem;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-  }
-
-  .layout-btn:hover {
-    background: rgba(74, 158, 255, 0.1);
-    border-color: var(--accent-color);
-    color: var(--text-primary);
-  }
-
-  .layout-btn.active {
-    background: rgba(74, 220, 150, 0.1);
-    border-color: var(--meter-green);
-  }
-
-  .layout-btn.danger:hover {
-    background: rgba(239, 68, 68, 0.1);
-    border-color: var(--meter-red);
-    color: var(--meter-red);
-  }
-
-  .layout-btn .badge.active {
-    background: rgba(74, 220, 150, 0.2);
-    color: var(--meter-green);
-  }
-
-  .lock-icon, .grid-icon, .snap-icon, .reset-icon, .arrange-icon {
-    font-size: 0.9rem;
   }
 
   /* Audio Sources Section */
@@ -850,18 +794,6 @@
   }
 
   /* Layout Presets Styles */
-  .presets-container {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .preset-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
   .preset-item {
     display: flex;
     align-items: center;
@@ -954,20 +886,5 @@
     font-size: 0.8rem;
     font-style: italic;
     padding: 0.25rem 0;
-  }
-
-  .save-icon {
-    font-size: 0.9rem;
-  }
-
-  .layout-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .layout-btn:disabled:hover {
-    background: var(--bg-tertiary);
-    border-color: var(--border-color);
-    color: var(--text-secondary);
   }
 </style>
