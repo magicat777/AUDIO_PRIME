@@ -324,16 +324,31 @@ function createGridLayoutStore() {
     },
 
     // Toggle panel lock
+    // When locking, convert to current display size so panel doesn't resize
     toggleLock: (panelId: string) => {
       update(state => {
         const panel = state.panels[panelId];
         if (!panel) return state;
 
+        const willBeLocked = !panel.locked;
+        let newWidth = panel.width;
+        let newHeight = panel.height;
+
+        // When locking an unlocked panel, convert to current display size
+        if (willBeLocked && !panel.locked) {
+          const { scaleX, scaleY } = state.scale;
+          const uniformScale = Math.min(scaleX, scaleY);
+          if (uniformScale > 0) {
+            newWidth = Math.round(panel.width * uniformScale);
+            newHeight = Math.round(panel.height * uniformScale);
+          }
+        }
+
         const newState = {
           ...state,
           panels: {
             ...state.panels,
-            [panelId]: { ...panel, locked: !panel.locked },
+            [panelId]: { ...panel, width: newWidth, height: newHeight, locked: willBeLocked },
           },
         };
         saveToStorage(newState);
@@ -342,11 +357,26 @@ function createGridLayoutStore() {
     },
 
     // Lock all panels
+    // Convert sizes to current display size so panels don't resize when locked
     lockAll: () => {
       update(state => {
+        const { scaleX, scaleY } = state.scale;
+        const uniformScale = Math.min(scaleX, scaleY);
+
         const newPanels = { ...state.panels };
         for (const id of Object.keys(newPanels)) {
-          newPanels[id] = { ...newPanels[id], locked: true };
+          const panel = newPanels[id];
+          // Only convert size if panel is currently unlocked
+          if (!panel.locked && uniformScale > 0) {
+            newPanels[id] = {
+              ...panel,
+              width: Math.round(panel.width * uniformScale),
+              height: Math.round(panel.height * uniformScale),
+              locked: true,
+            };
+          } else {
+            newPanels[id] = { ...panel, locked: true };
+          }
         }
         const newState = { ...state, panels: newPanels };
         saveToStorage(newState);
@@ -589,34 +619,35 @@ export const scaledPanelLayouts = derived(gridLayout, $grid => {
   const scaledPanels: Record<string, PanelLayout> = {};
 
   for (const [id, panel] of Object.entries($grid.panels)) {
-    // LOCKED panels keep their exact stored dimensions - no scaling
-    if (panel.locked) {
-      scaledPanels[id] = { ...panel };
-      continue;
-    }
-
-    // Scale dimensions using uniform scale factor
-    const scaledWidth = Math.max(minWidthCells, Math.round(panel.width * uniformScale));
-    const scaledHeight = Math.max(minHeightCells, Math.round(panel.height * uniformScale));
+    // Determine panel dimensions
+    // LOCKED panels keep their exact stored dimensions - no size scaling
+    // UNLOCKED panels scale proportionally with window
+    const panelWidth = panel.locked
+      ? Math.max(minWidthCells, panel.width)
+      : Math.max(minWidthCells, Math.round(panel.width * uniformScale));
+    const panelHeight = panel.locked
+      ? Math.max(minHeightCells, panel.height)
+      : Math.max(minHeightCells, Math.round(panel.height * uniformScale));
 
     // Positions stay fixed (no scaling) - panels stay on their grid positions
     let x = panel.x;
     let y = panel.y;
 
     // Clamp positions so panels don't extend beyond visible bounds
-    if (x + scaledWidth > maxGridX) {
-      x = Math.max(0, maxGridX - scaledWidth);
+    // This applies to ALL panels (locked or not) to keep them visible
+    if (x + panelWidth > maxGridX) {
+      x = Math.max(0, maxGridX - panelWidth);
     }
-    if (y + scaledHeight > maxGridY) {
-      y = Math.max(0, maxGridY - scaledHeight);
+    if (y + panelHeight > maxGridY) {
+      y = Math.max(0, maxGridY - panelHeight);
     }
 
     scaledPanels[id] = {
       ...panel,
       x,
       y,
-      width: scaledWidth,
-      height: scaledHeight,
+      width: panelWidth,
+      height: panelHeight,
     };
   }
 
