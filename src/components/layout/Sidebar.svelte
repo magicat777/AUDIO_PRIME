@@ -12,9 +12,10 @@
   let devices: AudioDevice[] = [];
   let selectedDeviceId: string | null = null;
 
-  // Accordion state for audio sources
+  // Accordion state for audio sources and modules
   let monitorsExpanded = true;
   let inputsExpanded = true;
+  let modulesExpanded = true;
 
   // Check if all panels are locked
   $: allLocked = Object.values($gridLayout.panels).every(p => p.locked);
@@ -233,66 +234,74 @@
 
     <section class="section">
       <h3>Modules</h3>
-      <div class="module-list">
-        <label class="module-toggle">
-          <input type="checkbox" checked={$moduleVisibility.spectrum} on:change={() => toggleModule('spectrum')} />
-          <span>Spectrum Display</span>
-          <span class="badge">Core</span>
-        </label>
-        <label class="module-toggle">
-          <input type="checkbox" checked={$moduleVisibility.vuMeters} on:change={() => toggleModule('vuMeters')} />
-          <span>VU Meters</span>
-          <span class="badge">Core</span>
-        </label>
-        <label class="module-toggle">
-          <input type="checkbox" checked={$moduleVisibility.bassDetail} on:change={() => toggleModule('bassDetail')} />
-          <span>Bass Detail</span>
-        </label>
-        <label class="module-toggle sub-toggle">
-          <input type="checkbox" checked={$moduleVisibility.waterfall} on:change={() => toggleModule('waterfall')} />
-          <span>Waterfall Display</span>
-        </label>
-        <label class="module-toggle">
-          <input type="checkbox" checked={$moduleVisibility.lufsMetering} on:change={() => toggleModule('lufsMetering')} />
-          <span>LUFS Metering</span>
-        </label>
-        <label class="module-toggle">
-          <input type="checkbox" checked={$moduleVisibility.bpmTempo} on:change={() => toggleModule('bpmTempo')} />
-          <span>BPM / Tempo</span>
-        </label>
-        <label class="module-toggle">
-          <input type="checkbox" checked={$moduleVisibility.voiceDetection} on:change={() => toggleModule('voiceDetection')} />
-          <span>Voice Detection</span>
-        </label>
-        <label class="module-toggle">
-          <input type="checkbox" checked={$moduleVisibility.stereoCorrelation} on:change={() => toggleModule('stereoCorrelation')} />
-          <span>Stereo Correlation</span>
-          <span class="badge stereo">NEW</span>
-        </label>
-        <label class="module-toggle">
-          <input type="checkbox" checked={$moduleVisibility.goniometer} on:change={() => toggleModule('goniometer')} />
-          <span>Goniometer</span>
-          <span class="badge stereo">NEW</span>
-        </label>
-        <label class="module-toggle">
-          <input type="checkbox" checked={$moduleVisibility.oscilloscope} on:change={() => toggleModule('oscilloscope')} />
-          <span>Oscilloscope</span>
-          <span class="badge stereo">NEW</span>
-        </label>
-        <label class="module-toggle">
-          <input type="checkbox" checked={$moduleVisibility.frequencyBands} on:change={() => toggleModule('frequencyBands')} />
-          <span>Frequency Bands</span>
-          <span class="badge stereo">NEW</span>
-        </label>
-        <label class="module-toggle">
-          <input type="checkbox" checked={$moduleVisibility.debug} on:change={() => toggleModule('debug')} />
-          <span>Debug Panel</span>
-        </label>
-        <label class="module-toggle">
-          <input type="checkbox" checked={$moduleVisibility.spotify} on:change={() => toggleModule('spotify')} />
-          <span>Spotify</span>
-          <span class="badge spotify">API</span>
-        </label>
+      <div class="accordion-section">
+        <button
+          class="accordion-header"
+          class:expanded={modulesExpanded}
+          on:click={() => modulesExpanded = !modulesExpanded}
+        >
+          <svg class="accordion-icon" width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+            <path d="M4 2l4 4-4 4" stroke="currentColor" stroke-width="2" fill="none"/>
+          </svg>
+          <span class="accordion-title">Display Panels</span>
+          <span class="device-count">{Object.values($moduleVisibility).filter(v => v).length - ($moduleVisibility.waterfall ? 1 : 0)}</span>
+        </button>
+        {#if modulesExpanded}
+          <div class="accordion-content">
+            <button class="module-item" class:active={$moduleVisibility.spectrum} on:click={() => toggleModule('spectrum')}>
+              <span class="module-name">Spectrum Display</span>
+              <span class="led-indicator" class:on={$moduleVisibility.spectrum}></span>
+            </button>
+            <button class="module-item" class:active={$moduleVisibility.vuMeters} on:click={() => toggleModule('vuMeters')}>
+              <span class="module-name">VU Meters</span>
+              <span class="led-indicator" class:on={$moduleVisibility.vuMeters}></span>
+            </button>
+            <button class="module-item" class:active={$moduleVisibility.bassDetail} on:click={() => toggleModule('bassDetail')}>
+              <span class="module-name">Bass Detail</span>
+              <span class="led-indicator" class:on={$moduleVisibility.bassDetail}></span>
+            </button>
+            <button class="module-item sub-item" class:active={$moduleVisibility.waterfall} on:click={() => toggleModule('waterfall')}>
+              <span class="module-name">Waterfall Display</span>
+              <span class="led-indicator" class:on={$moduleVisibility.waterfall}></span>
+            </button>
+            <button class="module-item" class:active={$moduleVisibility.lufsMetering} on:click={() => toggleModule('lufsMetering')}>
+              <span class="module-name">LUFS Metering</span>
+              <span class="led-indicator" class:on={$moduleVisibility.lufsMetering}></span>
+            </button>
+            <button class="module-item" class:active={$moduleVisibility.bpmTempo} on:click={() => toggleModule('bpmTempo')}>
+              <span class="module-name">BPM / Tempo</span>
+              <span class="led-indicator" class:on={$moduleVisibility.bpmTempo}></span>
+            </button>
+            <button class="module-item" class:active={$moduleVisibility.voiceDetection} on:click={() => toggleModule('voiceDetection')}>
+              <span class="module-name">Voice Detection</span>
+              <span class="led-indicator" class:on={$moduleVisibility.voiceDetection}></span>
+            </button>
+            <button class="module-item" class:active={$moduleVisibility.stereoCorrelation} on:click={() => toggleModule('stereoCorrelation')}>
+              <span class="module-name">Stereo Correlation</span>
+              <span class="led-indicator" class:on={$moduleVisibility.stereoCorrelation}></span>
+            </button>
+            <button class="module-item" class:active={$moduleVisibility.goniometer} on:click={() => toggleModule('goniometer')}>
+              <span class="module-name">Goniometer</span>
+              <span class="led-indicator" class:on={$moduleVisibility.goniometer}></span>
+            </button>
+            <button class="module-item" class:active={$moduleVisibility.oscilloscope} on:click={() => toggleModule('oscilloscope')}>
+              <span class="module-name">Oscilloscope</span>
+              <span class="led-indicator" class:on={$moduleVisibility.oscilloscope}></span>
+            </button>
+            <button class="module-item" class:active={$moduleVisibility.frequencyBands} on:click={() => toggleModule('frequencyBands')}>
+              <span class="module-name">Frequency Bands</span>
+              <span class="led-indicator" class:on={$moduleVisibility.frequencyBands}></span>
+            </button>
+            <button class="module-item" class:active={$moduleVisibility.debug} on:click={() => toggleModule('debug')}>
+              <span class="module-name">Debug Panel</span>
+              <span class="led-indicator" class:on={$moduleVisibility.debug}></span>
+            </button>
+            <button class="module-item" class:active={$moduleVisibility.spotify} on:click={() => toggleModule('spotify')}>
+              <span class="module-name">Spotify</span>
+              <span class="led-indicator" class:on={$moduleVisibility.spotify}></span>
+            </button>
+          </div>
+        {/if}
       </div>
     </section>
 
@@ -514,36 +523,55 @@
     padding: 0.5rem;
   }
 
-  .module-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .module-toggle {
+  /* Module Item Styles */
+  .module-item {
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    padding: 0.4rem 0;
-    cursor: pointer;
-    font-size: 0.85rem;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
     color: var(--text-secondary);
+    font-size: 0.85rem;
+    cursor: pointer;
+    text-align: left;
+    transition: all var(--transition-fast);
   }
 
-  .module-toggle input {
-    width: 16px;
-    height: 16px;
-    accent-color: var(--accent-color);
-  }
-
-  .module-toggle:hover {
+  .module-item:hover {
+    background: var(--bg-tertiary);
     color: var(--text-primary);
   }
 
-  .module-toggle.sub-toggle {
+  .module-item.active {
+    color: var(--text-primary);
+  }
+
+  .module-item.sub-item {
     padding-left: 1.5rem;
     font-size: 0.8rem;
-    color: var(--text-muted);
+  }
+
+  .module-name {
+    flex: 1;
+  }
+
+  .led-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    flex-shrink: 0;
+    transition: all var(--transition-fast);
+  }
+
+  .led-indicator.on {
+    background: var(--meter-green);
+    border-color: var(--meter-green);
+    box-shadow: 0 0 6px var(--meter-green);
   }
 
   .badge {
@@ -553,16 +581,6 @@
     border-radius: 2px;
     color: var(--text-muted);
     margin-left: auto;
-  }
-
-  .badge.spotify {
-    background: rgba(29, 185, 84, 0.2);
-    color: #1DB954;
-  }
-
-  .badge.stereo {
-    background: rgba(74, 158, 255, 0.2);
-    color: var(--accent-color);
   }
 
   .shortcuts {
