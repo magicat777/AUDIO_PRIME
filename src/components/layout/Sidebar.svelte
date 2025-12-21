@@ -12,12 +12,12 @@
   let devices: AudioDevice[] = [];
   let selectedDeviceId: string | null = null;
 
-  // Accordion state for audio sources, modules, layout, and presets
-  let monitorsExpanded = true;
-  let inputsExpanded = true;
-  let modulesExpanded = true;
-  let layoutExpanded = true;
-  let presetsExpanded = true;
+  // Accordion state for audio sources, modules, layout, and presets (collapsed by default)
+  let monitorsExpanded = false;
+  let inputsExpanded = false;
+  let modulesExpanded = false;
+  let layoutExpanded = false;
+  let presetsExpanded = false;
 
   // Check if all panels are locked
   $: allLocked = Object.values($gridLayout.panels).every(p => p.locked);
