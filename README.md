@@ -16,10 +16,12 @@ A modern, high-performance audio analysis application built with Electron + Svel
 
 ### Spectrum Analysis
 - **512-Bar Spectrum Analyzer** - Logarithmic frequency display from 20Hz to 20kHz
-- **Enhanced Bass Detail** - Dedicated panel with optimized 20-500Hz resolution
+- **70dB Dynamic Range** - Extended range (-80dB to -10dB) for detailed low-level analysis
+- **Enhanced Bass Detail** - Dedicated panel with optimized 20-200Hz resolution
 - **Waterfall Spectrogram** - Time-frequency visualization with 60 FPS scrolling
-- **Frequency Band Analysis** - Sub, Low, Mid, High, Presence, Air breakdown
+- **Frequency Band Analysis** - Sub-Bass, Bass, Low-Mid, Mid, Upper-Mid, Presence, Brilliance
 - **Multi-Resolution FFT** - Adaptive resolution for optimal frequency/time tradeoff
+- **Perceptual Weighting** - Psychoacoustic compensation for balanced visual display
 
 ### Professional Metering
 - **LUFS Metering** - ITU-R BS.1770-4 compliant loudness measurement
@@ -44,12 +46,12 @@ A modern, high-performance audio analysis application built with Electron + Svel
 - **Oscilloscope** - Waveform display with auto-gain
 
 ### 3D Visualizations (v1.2.0)
-- **Cylindrical Bars** - 3D spectrum arranged around a cylinder with auto-rotation
-- **3D Waterfall** - Spectrum history rendered as a 3D surface
-- **Frequency Sphere** - Pulsating sphere with beat-reactive scaling
-- **3D Stereo Space** - Point cloud visualization of stereo field
-- **Tunnel Effect** - Forward-scrolling concentric rings (lines/filled/both modes)
-- **Terrain Landscape** - Fly-over spectrum terrain with fog depth
+- **Cylindrical Bars** - 3D spectrum arranged around a cylinder with auto-rotation, optional rings/radials/floor
+- **3D Waterfall** - Spectrum history rendered as a scrolling 3D surface mesh
+- **Frequency Sphere** - Pulsating sphere with beat-reactive scaling and frequency-mapped spikes
+- **3D Stereo Space** - Point cloud visualization of stereo field with color-coded L/R channels
+- **Tunnel Effect** - Forward-scrolling concentric rings (lines/filled/both render modes)
+- **Terrain Landscape** - Fly-over spectrum terrain with fog depth and multi-pass smoothing
 
 ### Spotify Integration
 - **Now Playing** - Track, artist, album display with album art
@@ -140,9 +142,12 @@ npm run build
 | `Space` | Toggle mute |
 | `M` | Toggle mute |
 | `F` | Toggle fullscreen |
+| `ESC` | Exit fullscreen |
+| `Q` | Quit application |
 | `D` | Toggle debug panel |
 | `T` | Reset tempo detection |
 | `B` | Toggle bass waterfall |
+| `Shift+A` | Auto-arrange panels |
 | `1-6` | Window size presets |
 
 ### Panel Controls
@@ -153,9 +158,19 @@ Use the sidebar toggles to show/hide panels:
 - LUFS Metering
 - BPM/Tempo
 - Voice Detection
-- Stereo Analysis
+- Stereo Analysis (Goniometer, Correlation, Oscilloscope)
 - Debug Panel
 - Spotify
+- 3D Visualizations (Cylindrical Bars, Frequency Sphere, 3D Stereo, 3D Waterfall, Tunnel, Terrain)
+
+### Layout System
+- **Drag & Drop** - Move panels anywhere on the canvas
+- **Resize** - Drag panel edges to resize
+- **Lock/Unlock** - Lock panels to prevent accidental moves
+- **Auto-Arrange** - Press `Shift+A` to auto-arrange all panels
+- **Layout Presets** - Save up to 5 custom layouts
+- **Grid Snap** - Optional grid snapping for alignment
+- **Persistent Storage** - Layouts saved automatically to `~/.config/audio-prime/`
 
 ---
 
@@ -208,7 +223,8 @@ Use the sidebar toggles to show/hide panels:
 | UI | Svelte 5 |
 | Build | Vite 6 |
 | Language | TypeScript 5.7 (strict mode) |
-| Rendering | Canvas 2D |
+| 2D Rendering | Canvas 2D + WebGL2 |
+| 3D Rendering | WebGL2 (custom shaders) |
 | Testing | Vitest |
 | Linting | ESLint + Security plugins |
 
