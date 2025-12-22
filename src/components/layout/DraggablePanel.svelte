@@ -22,6 +22,13 @@
     oscilloscope: 'oscilloscope',
     frequencyBands: 'frequencyBands',
     spotify: 'spotify',
+    // 3D visualizations
+    cylindricalBars: 'cylindricalBars',
+    waterfall3d: 'waterfall3d',
+    frequencySphere: 'frequencySphere',
+    stereoSpace3d: 'stereoSpace3d',
+    tunnel: 'tunnel',
+    terrain: 'terrain',
   };
 
   function handleClosePanel(e: MouseEvent) {
