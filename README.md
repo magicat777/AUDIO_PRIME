@@ -4,7 +4,7 @@
 
 A modern, high-performance audio analysis application built with Electron + Svelte 5, featuring studio-grade metering, advanced visualizations, and Spotify integration.
 
-![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Version](https://img.shields.io/badge/version-1.2.0-blue)
 ![Electron](https://img.shields.io/badge/electron-35+-green)
 ![TypeScript](https://img.shields.io/badge/typescript-5.7+-blue)
 ![Svelte](https://img.shields.io/badge/svelte-5+-orange)
@@ -43,6 +43,14 @@ A modern, high-performance audio analysis application built with Electron + Svel
 - **M/S Metering** - Mid/Side level analysis
 - **Oscilloscope** - Waveform display with auto-gain
 
+### 3D Visualizations (v1.2.0)
+- **Cylindrical Bars** - 3D spectrum arranged around a cylinder with auto-rotation
+- **3D Waterfall** - Spectrum history rendered as a 3D surface
+- **Frequency Sphere** - Pulsating sphere with beat-reactive scaling
+- **3D Stereo Space** - Point cloud visualization of stereo field
+- **Tunnel Effect** - Forward-scrolling concentric rings (lines/filled/both modes)
+- **Terrain Landscape** - Fly-over spectrum terrain with fog depth
+
 ### Spotify Integration
 - **Now Playing** - Track, artist, album display with album art
 - **Playback Controls** - Play/Pause, Previous, Next, Seek
@@ -52,20 +60,42 @@ A modern, high-performance audio analysis application built with Electron + Svel
 
 ## Installation
 
+> **Note:** AUDIO_PRIME currently supports **Linux only** due to limitations with system audio capture in Electron on macOS and Windows.
+
 ### Download (Recommended)
 
-Download the latest release for your platform:
-- **Linux**: `.AppImage` (universal), `.deb` (Ubuntu/Debian), `.rpm` (Fedora/RHEL)
-- **macOS**: `.dmg` (Intel & Apple Silicon)
+Download the latest release from [Releases](https://github.com/magicat777/AUDIO_PRIME/releases):
+- `.AppImage` - Universal Linux (no install required, just make executable)
+- `.deb` - Ubuntu/Debian/Pop!_OS/Linux Mint
+- `.rpm` - Fedora/RHEL/CentOS
 
-See [Releases](https://github.com/magicat777/AUDIO_PRIME/releases)
+### Linux Installation
+
+#### AppImage (Easiest)
+```bash
+chmod +x AUDIO_PRIME-*.AppImage
+./AUDIO_PRIME-*.AppImage
+```
+
+#### Debian/Ubuntu (.deb)
+```bash
+# Recommended: Use dpkg directly to avoid apt sandbox warnings
+sudo dpkg -i AUDIO_PRIME-*-linux-amd64.deb
+
+# Install any missing dependencies
+sudo apt-get install -f
+```
+
+#### Fedora/RHEL (.rpm)
+```bash
+sudo rpm -i AUDIO_PRIME-*-linux-x86_64.rpm
+```
 
 ### Build from Source
 
 #### Prerequisites
 - **Node.js** 18+ and npm
 - **Linux**: PipeWire or PulseAudio with `parec` command
-- **macOS**: Core Audio (built-in)
 
 #### Setup
 ```bash
@@ -244,11 +274,11 @@ AUDIO_PRIME/
 ### Build Targets
 | Platform | Format | Status |
 |----------|--------|--------|
-| Linux | AppImage | ✅ |
-| Linux | .deb | ✅ |
-| Linux | .rpm | ✅ |
-| macOS | .dmg (x64 + arm64) | ✅ Configured |
-| Windows | NSIS installer | ✅ Configured |
+| Linux | AppImage | ✅ Supported |
+| Linux | .deb | ✅ Supported |
+| Linux | .rpm | ✅ Supported |
+| macOS | .dmg | ❌ Not supported (audio capture limitations) |
+| Windows | NSIS | ❌ Not supported (audio capture limitations) |
 
 ---
 
