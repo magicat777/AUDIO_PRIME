@@ -111,14 +111,16 @@
     "deb": {
       "depends": [
         "libpulse0",
-        "libasound2"
+        "libasound2",
+        "pulseaudio-utils"
       ],
       "afterInstall": "build/afterInstall.sh"
     },
     "rpm": {
       "depends": [
         "pulseaudio-libs",
-        "alsa-lib"
+        "alsa-lib",
+        "pulseaudio-utils"
       ],
       "afterInstall": "build/afterInstall.sh"
     },
