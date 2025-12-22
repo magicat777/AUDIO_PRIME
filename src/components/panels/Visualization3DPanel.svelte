@@ -88,8 +88,11 @@
           const { CylindricalBarsRenderer } = await import('../../rendering/renderers/CylindricalBarsRenderer');
           return new CylindricalBarsRenderer(gl, canvas.width, canvas.height, config);
         }
+        case 'waterfall3d': {
+          const { Waterfall3DRenderer } = await import('../../rendering/renderers/Waterfall3DRenderer');
+          return new Waterfall3DRenderer(gl, canvas.width, canvas.height, config);
+        }
         // The following renderers are not yet implemented - will show "Coming Soon" message
-        case 'waterfall3d':
         case 'sphere':
         case 'stereoSpace':
         case 'tunnel':
