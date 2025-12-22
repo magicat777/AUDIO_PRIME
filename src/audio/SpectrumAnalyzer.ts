@@ -19,8 +19,8 @@ const FFT_SIZE = 4096;
 
 // Smoothing configuration
 const OCTAVE_SMOOTHING_FACTOR = 1/6;  // 1/6 octave smoothing (professional RTA standard)
-const GAP_THRESHOLD = 0.15;           // Threshold for gap detection (relative to neighbors)
-const INTERPOLATION_BLEND = 0.6;      // How much to blend interpolated values
+const GAP_THRESHOLD = 0.08;           // Threshold for gap detection (reduced to preserve detail)
+const INTERPOLATION_BLEND = 0.4;      // How much to blend interpolated values (reduced)
 
 // Perceptual frequency band distribution (matches OMEGA)
 // Note: Currently using logarithmic mapping with these approximate band weights:
@@ -363,7 +363,8 @@ export class SpectrumAnalyzer {
       }
 
       // === STEP 5: Normalize to 0-1 range ===
-      const DB_MIN = -70;
+      // Extended range to -80dB for better low-level detail (vocals, harmonics)
+      const DB_MIN = -80;
       const DB_MAX = -10;
       const normalized = (db - DB_MIN) / (DB_MAX - DB_MIN);
       rawOutput[i] = Math.max(0, Math.min(1, normalized));

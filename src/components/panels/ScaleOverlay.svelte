@@ -16,10 +16,11 @@
   const MAX_FREQ = 20000;
 
   // dB scale configuration for mirrored stereo display
-  // Top half: 0dB at top, -60dB at center
-  // Bottom half: -60dB at center, 0dB at bottom
-  const DB_LABELS_TOP = [0, -12, -24, -36, -48, -60];
-  const DB_LABELS_BOTTOM = [-48, -36, -24, -12, 0];
+  // Range: -80dB (center/floor) to -10dB (edges/max)
+  // Top half: -10dB at top, -80dB at center
+  // Bottom half: -80dB at center, -10dB at bottom
+  const DB_LABELS_TOP = [-10, -24, -36, -48, -60, -80];
+  const DB_LABELS_BOTTOM = [-60, -48, -36, -24, -10];
 
   $: if (canvas && width > 0 && height > 0 && fftMode) {
     drawScales();
@@ -76,10 +77,11 @@
     const centerY = margin.top + graphHeight / 2;
     const halfHeight = graphHeight / 2;
 
-    // Top half: 0dB at top, -60dB at center
+    // Top half: -10dB at top, -80dB at center
     for (const db of DB_LABELS_TOP) {
-      // Map dB to vertical position (0dB at top of graph, -60dB at center)
-      const normalizedDb = (0 - db) / 60; // 0 to 1
+      // Map dB to vertical position (-10dB at top of graph, -80dB at center)
+      // normalizedDb: 0 = -10dB (top), 1 = -80dB (center)
+      const normalizedDb = (-10 - db) / 70; // 0 to 1
       const y = margin.top + normalizedDb * halfHeight;
 
       // Grid line
@@ -88,13 +90,13 @@
       ctx.lineTo(width - margin.right, y);
       ctx.stroke();
 
-      // Label (skip -60 as it will be drawn as center line)
-      if (db !== -60) {
+      // Label (skip -80 as it will be drawn as center line)
+      if (db !== -80) {
         ctx.fillText(`${db}`, margin.left - 5, y);
       }
     }
 
-    // Center line at -60dB (emphasized with glow effect)
+    // Center line at -80dB (emphasized with glow effect)
     // Draw glow layer first
     ctx.strokeStyle = 'rgba(74, 158, 255, 0.3)';
     ctx.lineWidth = 4;
@@ -112,14 +114,15 @@
     ctx.stroke();
 
     ctx.fillStyle = '#606060';
-    ctx.fillText('-60', margin.left - 5, centerY);
+    ctx.fillText('-80', margin.left - 5, centerY);
     ctx.strokeStyle = 'rgba(42, 48, 64, 0.5)';
     ctx.lineWidth = 1;
 
-    // Bottom half: -60dB at center, 0dB at bottom (mirrored)
+    // Bottom half: -80dB at center, -10dB at bottom (mirrored)
     for (const db of DB_LABELS_BOTTOM) {
-      // Map dB to vertical position (mirrored: -60dB at center, 0dB at bottom)
-      const normalizedDb = (60 + db) / 60; // 0 to 1 (from center down)
+      // Map dB to vertical position (mirrored: -80dB at center, -10dB at bottom)
+      // normalizedDb: 0 = -80dB (center), 1 = -10dB (bottom)
+      const normalizedDb = (80 + db) / 70; // 0 to 1 (from center down)
       const y = centerY + normalizedDb * halfHeight;
 
       // Grid line

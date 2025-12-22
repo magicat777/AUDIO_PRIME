@@ -164,8 +164,9 @@
       const barIndex = BASS_START_BAR + Math.max(0, Math.min(BASS_BAR_COUNT - 1, bassBarIndex));
 
       // Get the amplitude value (0-1 linear) and convert to dB
+      // Range: 0.0 = -80dB, 1.0 = -10dB (matches SpectrumAnalyzer)
       const amplitude = spectrum[barIndex] || 0;
-      cursorDb = amplitude > 0.001 ? -60 + amplitude * 60 : -100;
+      cursorDb = amplitude > 0.001 ? -80 + amplitude * 70 : -100;
     } else {
       cursorFreq = 0;
     }
@@ -239,11 +240,11 @@
       }
       ctx.stroke();
 
-      // Horizontal dB grid lines
-      const dbLines = [-60, -48, -36, -24, -12, 0];
+      // Horizontal dB grid lines (range: -10dB at top to -80dB at bottom)
+      const dbLines = [-10, -24, -36, -48, -60, -80];
       ctx.beginPath();
       for (const db of dbLines) {
-        const y = padding.top + ((0 - db) / 60) * graphHeight;
+        const y = padding.top + ((-10 - db) / 70) * graphHeight;
         ctx.moveTo(padding.left, y);
         ctx.lineTo(width - padding.right, y);
       }
@@ -411,7 +412,7 @@
       ctx.textBaseline = 'middle';
 
       for (const db of dbLines) {
-        const y = padding.top + ((0 - db) / 60) * graphHeight;
+        const y = padding.top + ((-10 - db) / 70) * graphHeight;
         ctx.fillText(`${db}`, padding.left - 5, y);
       }
 

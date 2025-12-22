@@ -87,9 +87,9 @@
       const clampedIndex = Math.max(0, Math.min(currentSpectrum.length - 1, barIndex));
 
       // Get the amplitude value (0-1 linear) and convert to dB
+      // Range: 0.0 = -80dB, 1.0 = -10dB (matches SpectrumAnalyzer)
       const amplitude = currentSpectrum[clampedIndex] || 0;
-      // Map the normalized amplitude to dB (-60 to 0)
-      cursorDb = amplitude > 0.001 ? -60 + amplitude * 60 : -100;
+      cursorDb = amplitude > 0.001 ? -80 + amplitude * 70 : -100;
     }
   }
 
