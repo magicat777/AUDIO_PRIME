@@ -82,13 +82,13 @@ const defaultLayouts: Record<string, Omit<PanelLayout, 'id'>> = {
   voiceDetection: { x: 0, y: 55, width: 46, height: 9, zIndex: 1, locked: false },
   frequencyBands: { x: 0, y: 55, width: 46, height: 13, zIndex: 1, locked: false },
 
-  // 3D Visualizations (v1.2) - larger default sizes for visual impact
-  cylindricalBars: { x: 0, y: 0, width: 40, height: 35, zIndex: 10, locked: false },
-  waterfall3d: { x: 0, y: 0, width: 40, height: 35, zIndex: 10, locked: false },
-  frequencySphere: { x: 0, y: 0, width: 35, height: 35, zIndex: 10, locked: false },
-  stereoSpace3d: { x: 0, y: 0, width: 35, height: 35, zIndex: 10, locked: false },
-  tunnel: { x: 0, y: 0, width: 40, height: 35, zIndex: 10, locked: false },
-  terrain: { x: 0, y: 0, width: 45, height: 35, zIndex: 10, locked: false },
+  // 3D Visualizations (v1.2) - larger default sizes, staggered positions
+  cylindricalBars: { x: 2, y: 2, width: 40, height: 35, zIndex: 10, locked: false },
+  waterfall3d: { x: 44, y: 2, width: 40, height: 35, zIndex: 10, locked: false },
+  frequencySphere: { x: 8, y: 8, width: 35, height: 35, zIndex: 10, locked: false },
+  stereoSpace3d: { x: 14, y: 14, width: 35, height: 35, zIndex: 10, locked: false },
+  tunnel: { x: 20, y: 5, width: 40, height: 35, zIndex: 10, locked: false },
+  terrain: { x: 26, y: 20, width: 45, height: 35, zIndex: 10, locked: false },
 };
 
 export type PanelId = keyof typeof defaultLayouts;
@@ -131,7 +131,16 @@ function parseStoredData(parsed: unknown): GridLayoutState {
   for (const [id, defaultPanel] of Object.entries(defaultState.panels)) {
     const storedPanels = data['panels'] as Record<string, PanelLayout> | undefined;
     const storedPanel = storedPanels?.[id];
-    if (storedPanel && typeof storedPanel.x === 'number' && typeof storedPanel.width === 'number') {
+
+    // Check for valid stored panel - all position/size values must be actual numbers (not null)
+    const hasValidPosition = storedPanel &&
+      typeof storedPanel.x === 'number' && storedPanel.x !== null &&
+      typeof storedPanel.y === 'number' && storedPanel.y !== null;
+    const hasValidSize = storedPanel &&
+      typeof storedPanel.width === 'number' && storedPanel.width !== null &&
+      typeof storedPanel.height === 'number' && storedPanel.height !== null;
+
+    if (hasValidPosition && hasValidSize) {
       // Use stored panel but ensure it has the id
       mergedPanels[id] = { ...defaultPanel, ...storedPanel, id };
     } else {

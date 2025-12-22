@@ -103,6 +103,9 @@
   // Accordion state for 3D visualizations
   let viz3dExpanded = false;
 
+  // Accordion state for keyboard shortcuts
+  let shortcutsExpanded = false;
+
   // Count active 3D visualizations
   $: active3dCount = [
     $moduleVisibility.cylindricalBars,

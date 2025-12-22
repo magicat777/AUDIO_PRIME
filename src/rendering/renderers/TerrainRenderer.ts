@@ -34,22 +34,28 @@ out float vDepth;
 out vec3 vWorldPos;
 
 void main() {
-  // Apply height from magnitude
-  float heightScale = 4.0;
-  float height = aMagnitude * heightScale;
+  // Apply height from magnitude with enhanced scaling
+  float heightScale = 6.0;
+  // Apply exponential curve for more dramatic peaks
+  float enhancedMag = pow(aMagnitude, 0.7) * 1.2;
+  float height = enhancedMag * heightScale;
 
-  // Beat-reactive height boost for front rows
-  float beatBoost = uBeatStrength * 0.5 * (1.0 - aTimeIndex);
-  height += beatBoost;
+  // Beat effect DISABLED - was causing jitter
+  // float beatBoost = uBeatStrength * 1.0 * (1.0 - aTimeIndex);
+  // height += beatBoost;
 
-  vec3 pos = vec3(aPosition.x, height, aPosition.z + uTerrainOffset);
+  // Terrain scrolls away from camera (into negative Z / distance)
+  vec3 pos = vec3(aPosition.x, height, aPosition.z - uTerrainOffset);
 
   gl_Position = uMVP * vec4(pos, 1.0);
 
   vFreqIndex = aFreqIndex;
   vTimeIndex = aTimeIndex;
   vMagnitude = aMagnitude;
-  vDepth = clamp((aPosition.z + uTerrainOffset + 25.0) / 50.0, 0.0, 1.0);
+  // Depth: 0 = front (newest, brightest), 1 = back (oldest, faded)
+  // aPosition.z goes from 0 (front) to -terrainDepth (back)
+  // So we negate and normalize: depth = -z / terrainDepth
+  vDepth = clamp(-aPosition.z / 40.0, 0.0, 1.0);
   vWorldPos = pos;
 }
 `;
@@ -76,25 +82,30 @@ void main() {
   // Get color from frequency position
   vec3 baseColor = getSpectrumColor(vFreqIndex);
 
-  // Intensity based on magnitude
-  float intensity = 0.5 + 0.5 * vMagnitude;
+  // Enhanced intensity based on magnitude - more dramatic for peaks
+  float intensity = 0.4 + 0.8 * pow(vMagnitude, 0.6);
 
-  // Brightness varies with depth (closer = brighter)
-  float depthBrightness = 0.6 + 0.4 * (1.0 - vDepth);
+  // Brightness varies with depth (closer = much brighter)
+  float depthBrightness = 0.4 + 0.6 * (1.0 - vDepth);
 
   vec3 color = baseColor * intensity * depthBrightness;
 
-  // Apply glow for peaks
-  color = applyGlow(color, vMagnitude, 0.5);
+  // Strong glow for peaks
+  color = applyGlow(color, vMagnitude, 0.3);
 
-  // Apply fog at distance
-  color = applyFog(color, vDepth * 1.5);
+  // Boost saturation for high magnitudes
+  float satBoost = 1.0 + vMagnitude * 0.5;
+  vec3 gray = vec3(dot(color, vec3(0.299, 0.587, 0.114)));
+  color = mix(gray, color, satBoost);
 
-  // Brightness boost
-  color *= 1.4;
+  // Apply fog at distance (gentler)
+  color = applyFog(color, vDepth * 1.2);
 
-  // Alpha for depth fade
-  float alpha = 1.0 - vDepth * 0.4;
+  // Overall brightness boost
+  color *= 1.6;
+
+  // Alpha for depth fade (less aggressive)
+  float alpha = 1.0 - vDepth * 0.3;
 
   fragColor = vec4(color, alpha);
 }
@@ -107,14 +118,15 @@ export class TerrainRenderer extends Base3DRenderer {
   private indexBuffer: WebGLBuffer;
 
   // Configuration
-  private gridWidth = 256;      // Frequency resolution
-  private gridDepth = 100;      // History depth
+  private gridWidth = 128;      // Frequency resolution (reduced for denser lines)
+  private gridDepth = 150;      // History depth (more rows for smoother history)
   private terrainWidth = 20.0;  // World units wide
-  private terrainDepth = 50.0;  // World units deep
+  private terrainDepth = 40.0;  // World units deep
 
   // Animation
   private terrainOffset = 0;    // Forward motion offset
-  private forwardSpeed = 5.0;   // Forward speed
+  private forwardSpeed = 3.0;   // Forward speed (slower for smoother scrolling)
+  private accumulator = 0;      // Time accumulator for smooth updates
 
   // Spectrum history ring buffer
   private spectrumHistory: Float32Array[];
@@ -264,23 +276,34 @@ export class TerrainRenderer extends Base3DRenderer {
     // Update time
     this.time += deltaTime / 1000;
 
-    // Update forward motion
-    const speedMultiplier = 1.0 + this.beatStrength * 0.3;
-    this.terrainOffset += this.forwardSpeed * speedMultiplier * (deltaTime / 1000);
+    // Always update the front row with current spectrum for smooth real-time response
+    this.updateFrontRow(spectrum);
 
-    // Loop terrain offset
+    // Update forward motion (constant speed, no beat reactivity for smoothness)
+    this.terrainOffset += this.forwardSpeed * (deltaTime / 1000);
+
+    // Accumulate time for row scrolling
+    this.accumulator += deltaTime;
+    const rowInterval = 33.33; // Push new row ~30 times per second for smooth history
+
+    // Loop terrain offset and push history rows at regular intervals
     const rowDepth = this.terrainDepth / this.gridDepth;
     if (this.terrainOffset > rowDepth) {
       this.terrainOffset -= rowDepth;
-      // Push new spectrum row into history
+    }
+
+    // Push spectrum rows at regular intervals for smooth history
+    if (this.accumulator >= rowInterval) {
+      this.accumulator -= rowInterval;
       this.pushSpectrumRow(spectrum);
     }
 
     // Update camera - fly-over perspective
+    // Camera positioned above and in front, looking down the terrain into the distance
     mat4.lookAt(
       this.viewMatrix,
-      [0, this.config.cameraHeight, this.config.cameraDistance],  // Camera position
-      [0, 0, -this.terrainDepth * 0.4],  // Look at middle of terrain
+      [0, this.config.cameraHeight + 4, 8],  // Camera above and in front
+      [0, 1, -this.terrainDepth * 0.3],       // Look toward middle-back of terrain
       [0, 1, 0]   // Up vector
     );
 
@@ -313,32 +336,113 @@ export class TerrainRenderer extends Base3DRenderer {
     gl.bindVertexArray(null);
   }
 
-  private pushSpectrumRow(spectrum: Float32Array): void {
-    // Advance history index
-    this.historyIndex = (this.historyIndex + 1) % this.gridDepth;
+  // Smoothed height buffer for rendering (separate from raw history)
+  private smoothedHeights: Float32Array | null = null;
 
-    // Resample spectrum to grid width
+  // Update front row with current spectrum for real-time response
+  private updateFrontRow(spectrum: Float32Array): void {
     const binsToUse = Math.min(spectrum.length, 512);
     const row = this.spectrumHistory[this.historyIndex];
 
     for (let x = 0; x < this.gridWidth; x++) {
-      const spectrumIndex = Math.floor((x / this.gridWidth) * binsToUse);
-      row[x] = Math.max(0, Math.min(1, spectrum[spectrumIndex] || 0));
+      // Sample wider range of bins and average for smoother frequency response
+      const centerIdx = (x / this.gridWidth) * binsToUse;
+      let sum = 0;
+      let count = 0;
+      for (let i = -4; i <= 4; i++) {
+        const idx = Math.floor(centerIdx + i);
+        if (idx >= 0 && idx < binsToUse) {
+          // Gaussian-like weighting
+          const weight = 1.0 - Math.abs(i) * 0.15;
+          sum += (spectrum[idx] || 0) * weight;
+          count += weight;
+        }
+      }
+      const newVal = Math.max(0, Math.min(1, count > 0 ? sum / count : 0));
+      // Strong temporal smoothing
+      row[x] = row[x] * 0.6 + newVal * 0.4;
+    }
+  }
+
+  private pushSpectrumRow(spectrum: Float32Array): void {
+    // Get previous row for temporal smoothing
+    const prevRowIdx = this.historyIndex;
+    const prevRow = this.spectrumHistory[prevRowIdx];
+
+    // Advance history index
+    this.historyIndex = (this.historyIndex + 1) % this.gridDepth;
+
+    // Resample spectrum to grid width with smoothing
+    const binsToUse = Math.min(spectrum.length, 512);
+    const row = this.spectrumHistory[this.historyIndex];
+
+    for (let x = 0; x < this.gridWidth; x++) {
+      // Sample wider range of bins
+      const centerIdx = (x / this.gridWidth) * binsToUse;
+      let sum = 0;
+      let count = 0;
+      for (let i = -4; i <= 4; i++) {
+        const idx = Math.floor(centerIdx + i);
+        if (idx >= 0 && idx < binsToUse) {
+          const weight = 1.0 - Math.abs(i) * 0.15;
+          sum += (spectrum[idx] || 0) * weight;
+          count += weight;
+        }
+      }
+      const rawVal = Math.max(0, Math.min(1, count > 0 ? sum / count : 0));
+      // Strong blend with previous row
+      row[x] = prevRow[x] * 0.5 + rawVal * 0.5;
     }
   }
 
   private updateHeights(): void {
+    // Initialize smoothed buffer if needed
+    if (!this.smoothedHeights || this.smoothedHeights.length !== this.gridWidth * this.gridDepth) {
+      this.smoothedHeights = new Float32Array(this.gridWidth * this.gridDepth);
+    }
+
+    // First pass: copy raw values
     for (let z = 0; z < this.gridDepth; z++) {
-      // Map grid row to history row (ring buffer)
       const historyRow = (this.historyIndex - z + this.gridDepth) % this.gridDepth;
       const row = this.spectrumHistory[historyRow];
-
       for (let x = 0; x < this.gridWidth; x++) {
-        const magnitude = row[x];
-        const vertexIdx = (z * this.gridWidth + x) * 6;
+        this.smoothedHeights[z * this.gridWidth + x] = row[x];
+      }
+    }
 
-        // Update magnitude in vertex data
-        this.vertexData[vertexIdx + 5] = magnitude;
+    // Second pass: horizontal blur (5-tap)
+    for (let z = 0; z < this.gridDepth; z++) {
+      for (let x = 2; x < this.gridWidth - 2; x++) {
+        const idx = z * this.gridWidth + x;
+        const smoothed =
+          this.smoothedHeights[idx - 2] * 0.1 +
+          this.smoothedHeights[idx - 1] * 0.2 +
+          this.smoothedHeights[idx] * 0.4 +
+          this.smoothedHeights[idx + 1] * 0.2 +
+          this.smoothedHeights[idx + 2] * 0.1;
+        this.smoothedHeights[idx] = smoothed;
+      }
+    }
+
+    // Third pass: vertical blur (3-tap) for temporal smoothness
+    for (let z = 1; z < this.gridDepth - 1; z++) {
+      for (let x = 0; x < this.gridWidth; x++) {
+        const idx = z * this.gridWidth + x;
+        const prevIdx = (z - 1) * this.gridWidth + x;
+        const nextIdx = (z + 1) * this.gridWidth + x;
+        const smoothed =
+          this.smoothedHeights[prevIdx] * 0.25 +
+          this.smoothedHeights[idx] * 0.5 +
+          this.smoothedHeights[nextIdx] * 0.25;
+        this.smoothedHeights[idx] = smoothed;
+      }
+    }
+
+    // Write to vertex buffer
+    for (let z = 0; z < this.gridDepth; z++) {
+      for (let x = 0; x < this.gridWidth; x++) {
+        const vertexIdx = (z * this.gridWidth + x) * 6;
+        this.vertexData[vertexIdx + 5] = this.smoothedHeights[z * this.gridWidth + x];
       }
     }
   }
