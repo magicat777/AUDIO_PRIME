@@ -667,8 +667,6 @@ export class CylindricalBarsRenderer extends Base3DRenderer {
   }
 
   render(spectrum: Float32Array, deltaTime: number): void {
-    const gl = this.gl;
-
     // Update time
     this.time += deltaTime / 1000;
 

@@ -271,7 +271,7 @@ export class StereoSpace3DRenderer extends Base3DRenderer {
     return new Float32Array(data);
   }
 
-  render(spectrum: Float32Array, deltaTime: number, stereoSamples?: Float32Array): void {
+  render(_spectrum: Float32Array, deltaTime: number, stereoSamples?: Float32Array): void {
     const gl = this.gl;
 
     // Update time

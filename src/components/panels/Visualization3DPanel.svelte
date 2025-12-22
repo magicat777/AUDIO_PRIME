@@ -88,6 +88,20 @@
     }
   }
 
+  // Render mode for tunnel (cycles: lines → filled → filled+lines)
+  let tunnelRenderMode: 'lines' | 'filled' | 'filled+lines' = 'lines';
+
+  // Reactive label for tunnel mode
+  $: tunnelModeLabel = tunnelRenderMode === 'lines' ? 'Lines'
+    : tunnelRenderMode === 'filled' ? 'Filled'
+    : 'Both';
+
+  function cycleTunnelMode() {
+    if (renderer && 'cycleRenderMode' in renderer) {
+      tunnelRenderMode = (renderer as any).cycleRenderMode();
+    }
+  }
+
   // Dynamically import and create the appropriate renderer
   async function createRenderer(): Promise<Base3DRenderer | null> {
     if (!gl) return null;
@@ -110,12 +124,14 @@
           const { StereoSpace3DRenderer } = await import('../../rendering/renderers/StereoSpace3DRenderer');
           return new StereoSpace3DRenderer(gl, canvas.width, canvas.height, config);
         }
-        // The following renderers are not yet implemented - will show "Coming Soon" message
-        case 'tunnel':
-        case 'terrain':
-          console.log(`3D renderer "${visualizationType}" not yet implemented`);
-          rendererNotImplemented = true;
-          return null;
+        case 'tunnel': {
+          const { TunnelRenderer } = await import('../../rendering/renderers/TunnelRenderer');
+          return new TunnelRenderer(gl, canvas.width, canvas.height, config);
+        }
+        case 'terrain': {
+          const { TerrainRenderer } = await import('../../rendering/renderers/TerrainRenderer');
+          return new TerrainRenderer(gl, canvas.width, canvas.height, config);
+        }
         default:
           console.error(`Unknown visualization type: ${visualizationType}`);
           return null;
@@ -260,6 +276,19 @@
         title="Toggle floor grid"
       >
         Floor
+      </button>
+    </div>
+  {/if}
+
+  {#if visualizationType === 'tunnel' && !rendererNotImplemented}
+    <div class="controls-overlay">
+      <button
+        class="control-btn"
+        class:active={tunnelRenderMode !== 'lines'}
+        on:click={cycleTunnelMode}
+        title="Cycle render mode: Lines → Filled → Both"
+      >
+        {tunnelModeLabel}
       </button>
     </div>
   {/if}
