@@ -127,6 +127,9 @@
     renderer.render(spectrum, deltaTime);
   }
 
+  // Store observer reference for cleanup
+  let resizeObserver: ResizeObserver | null = null;
+
   onMount(async () => {
     // Initialize WebGL2 context with depth buffer
     gl = canvas.getContext('webgl2', {
@@ -150,7 +153,10 @@
     }
 
     // Handle resize
-    const resizeObserver = new ResizeObserver((entries) => {
+    resizeObserver = new ResizeObserver((entries) => {
+      // Guard against callback firing after canvas is destroyed
+      if (!canvas) return;
+
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
         const dpr = window.devicePixelRatio || 1;
@@ -164,13 +170,10 @@
 
     // Register with centralized render coordinator
     renderCoordinator.register(RENDER_ID, renderFrame, priority);
-
-    return () => {
-      resizeObserver.disconnect();
-    };
   });
 
   onDestroy(() => {
+    resizeObserver?.disconnect();
     unsubSpectrum();
     unsubBeat();
     renderCoordinator.unregister(RENDER_ID);

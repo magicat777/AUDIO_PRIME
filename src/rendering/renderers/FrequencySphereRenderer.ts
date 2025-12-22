@@ -7,6 +7,12 @@
  * - OMEGA color palette based on frequency
  * - Glow at ray tips
  * - Beat-reactive sphere pulsation
+ *
+ * Performance Note:
+ * - Significant GPU impact: FPS drops to 40, recovers to 55-57
+ * - Combined with spectrum hover (frequency line), drops to 39-42 FPS
+ * - Impact persists even when panel not visible on screen
+ * - May need optimization or RenderCoordinator visibility check review
  */
 
 import { Base3DRenderer, Renderer3DConfig } from './Base3DRenderer';
