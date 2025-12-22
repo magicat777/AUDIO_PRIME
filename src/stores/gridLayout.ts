@@ -81,6 +81,14 @@ const defaultLayouts: Record<string, Omit<PanelLayout, 'id'>> = {
   // Bottom row
   voiceDetection: { x: 0, y: 55, width: 46, height: 9, zIndex: 1, locked: false },
   frequencyBands: { x: 0, y: 55, width: 46, height: 13, zIndex: 1, locked: false },
+
+  // 3D Visualizations (v1.2) - larger default sizes for visual impact
+  cylindricalBars: { x: 0, y: 0, width: 40, height: 35, zIndex: 10, locked: false },
+  waterfall3d: { x: 0, y: 0, width: 40, height: 35, zIndex: 10, locked: false },
+  frequencySphere: { x: 0, y: 0, width: 35, height: 35, zIndex: 10, locked: false },
+  stereoSpace3d: { x: 0, y: 0, width: 35, height: 35, zIndex: 10, locked: false },
+  tunnel: { x: 0, y: 0, width: 40, height: 35, zIndex: 10, locked: false },
+  terrain: { x: 0, y: 0, width: 45, height: 35, zIndex: 10, locked: false },
 };
 
 export type PanelId = keyof typeof defaultLayouts;

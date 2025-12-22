@@ -96,9 +96,22 @@
     dispatch('close');
   }
 
-  function toggleModule(module: 'spectrum' | 'vuMeters' | 'bassDetail' | 'waterfall' | 'lufsMetering' | 'bpmTempo' | 'voiceDetection' | 'stereoCorrelation' | 'goniometer' | 'oscilloscope' | 'frequencyBands' | 'debug' | 'spotify') {
+  function toggleModule(module: 'spectrum' | 'vuMeters' | 'bassDetail' | 'waterfall' | 'lufsMetering' | 'bpmTempo' | 'voiceDetection' | 'stereoCorrelation' | 'goniometer' | 'oscilloscope' | 'frequencyBands' | 'debug' | 'spotify' | 'cylindricalBars' | 'waterfall3d' | 'frequencySphere' | 'stereoSpace3d' | 'tunnel' | 'terrain') {
     moduleVisibility.toggle(module);
   }
+
+  // Accordion state for 3D visualizations
+  let viz3dExpanded = false;
+
+  // Count active 3D visualizations
+  $: active3dCount = [
+    $moduleVisibility.cylindricalBars,
+    $moduleVisibility.waterfall3d,
+    $moduleVisibility.frequencySphere,
+    $moduleVisibility.stereoSpace3d,
+    $moduleVisibility.tunnel,
+    $moduleVisibility.terrain,
+  ].filter(v => v).length;
 
   function formatSampleRate(rate: number): string {
     if (rate >= 1000) {
@@ -301,6 +314,51 @@
             <button class="module-item" class:active={$moduleVisibility.spotify} on:click={() => toggleModule('spotify')}>
               <span class="module-name">Spotify</span>
               <span class="led-indicator" class:on={$moduleVisibility.spotify}></span>
+            </button>
+          </div>
+        {/if}
+      </div>
+    </section>
+
+    <section class="section">
+      <h3>3D Visualizations</h3>
+      <div class="accordion-section">
+        <button
+          class="accordion-header"
+          class:expanded={viz3dExpanded}
+          on:click={() => viz3dExpanded = !viz3dExpanded}
+        >
+          <svg class="accordion-icon" width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+            <path d="M4 2l4 4-4 4" stroke="currentColor" stroke-width="2" fill="none"/>
+          </svg>
+          <span class="accordion-title">3D Panels</span>
+          <span class="device-count">{active3dCount}</span>
+        </button>
+        {#if viz3dExpanded}
+          <div class="accordion-content">
+            <button class="module-item" class:active={$moduleVisibility.cylindricalBars} on:click={() => toggleModule('cylindricalBars')}>
+              <span class="module-name">3D Bars (Cylinder)</span>
+              <span class="led-indicator" class:on={$moduleVisibility.cylindricalBars}></span>
+            </button>
+            <button class="module-item" class:active={$moduleVisibility.waterfall3d} on:click={() => toggleModule('waterfall3d')}>
+              <span class="module-name">3D Waterfall</span>
+              <span class="led-indicator" class:on={$moduleVisibility.waterfall3d}></span>
+            </button>
+            <button class="module-item" class:active={$moduleVisibility.frequencySphere} on:click={() => toggleModule('frequencySphere')}>
+              <span class="module-name">Frequency Sphere</span>
+              <span class="led-indicator" class:on={$moduleVisibility.frequencySphere}></span>
+            </button>
+            <button class="module-item" class:active={$moduleVisibility.stereoSpace3d} on:click={() => toggleModule('stereoSpace3d')}>
+              <span class="module-name">3D Stereo Space</span>
+              <span class="led-indicator" class:on={$moduleVisibility.stereoSpace3d}></span>
+            </button>
+            <button class="module-item" class:active={$moduleVisibility.tunnel} on:click={() => toggleModule('tunnel')}>
+              <span class="module-name">Tunnel Effect</span>
+              <span class="led-indicator" class:on={$moduleVisibility.tunnel}></span>
+            </button>
+            <button class="module-item" class:active={$moduleVisibility.terrain} on:click={() => toggleModule('terrain')}>
+              <span class="module-name">Terrain Landscape</span>
+              <span class="led-indicator" class:on={$moduleVisibility.terrain}></span>
             </button>
           </div>
         {/if}

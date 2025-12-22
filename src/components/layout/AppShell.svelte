@@ -17,6 +17,7 @@
   import FrequencyBandsPanel from '../meters/FrequencyBandsPanel.svelte';
   import DebugPanel from '../panels/DebugPanel.svelte';
   import SpotifyPanel from '../spotify/SpotifyPanel.svelte';
+  import Visualization3DPanel from '../panels/Visualization3DPanel.svelte';
   import { audioEngine } from '../../core/AudioEngine';
   import { moduleVisibility } from '../../stores/moduleVisibility';
   import { gridLayout } from '../../stores/gridLayout';
@@ -283,6 +284,67 @@
       {#if $moduleVisibility.frequencyBands}
         <DraggablePanel panelId="frequencyBands" title="Frequency Bands">
           <FrequencyBandsPanel />
+        </DraggablePanel>
+      {/if}
+
+      <!-- 3D Visualizations -->
+      {#if $moduleVisibility.cylindricalBars}
+        <DraggablePanel panelId="cylindricalBars" title="3D Bars">
+          <Visualization3DPanel
+            visualizationType="cylindricalBars"
+            visibilityKey="cylindricalBars"
+            priority="normal"
+          />
+        </DraggablePanel>
+      {/if}
+
+      {#if $moduleVisibility.waterfall3d}
+        <DraggablePanel panelId="waterfall3d" title="3D Waterfall">
+          <Visualization3DPanel
+            visualizationType="waterfall3d"
+            visibilityKey="waterfall3d"
+            priority="normal"
+          />
+        </DraggablePanel>
+      {/if}
+
+      {#if $moduleVisibility.frequencySphere}
+        <DraggablePanel panelId="frequencySphere" title="Freq Sphere">
+          <Visualization3DPanel
+            visualizationType="sphere"
+            visibilityKey="frequencySphere"
+            priority="normal"
+          />
+        </DraggablePanel>
+      {/if}
+
+      {#if $moduleVisibility.stereoSpace3d}
+        <DraggablePanel panelId="stereoSpace3d" title="3D Stereo">
+          <Visualization3DPanel
+            visualizationType="stereoSpace"
+            visibilityKey="stereoSpace3d"
+            priority="normal"
+          />
+        </DraggablePanel>
+      {/if}
+
+      {#if $moduleVisibility.tunnel}
+        <DraggablePanel panelId="tunnel" title="Tunnel">
+          <Visualization3DPanel
+            visualizationType="tunnel"
+            visibilityKey="tunnel"
+            priority="normal"
+          />
+        </DraggablePanel>
+      {/if}
+
+      {#if $moduleVisibility.terrain}
+        <DraggablePanel panelId="terrain" title="Terrain">
+          <Visualization3DPanel
+            visualizationType="terrain"
+            visibilityKey="terrain"
+            priority="normal"
+          />
         </DraggablePanel>
       {/if}
     </GridLayout>

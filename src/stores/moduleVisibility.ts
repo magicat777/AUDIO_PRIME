@@ -17,6 +17,13 @@ export interface ModuleVisibility {
   frequencyBands: boolean;
   debug: boolean;
   spotify: boolean;
+  // 3D Visualizations (v1.2)
+  cylindricalBars: boolean;
+  waterfall3d: boolean;
+  frequencySphere: boolean;
+  stereoSpace3d: boolean;
+  tunnel: boolean;
+  terrain: boolean;
 }
 
 const defaultVisibility: ModuleVisibility = {
@@ -33,6 +40,13 @@ const defaultVisibility: ModuleVisibility = {
   frequencyBands: true, // Frequency band analyzer
   debug: true,         // Toggleable
   spotify: true,       // Spotify integration
+  // 3D Visualizations - opt-in by default
+  cylindricalBars: false,
+  waterfall3d: false,
+  frequencySphere: false,
+  stereoSpace3d: false,
+  tunnel: false,
+  terrain: false,
 };
 
 // Load from localStorage if available
