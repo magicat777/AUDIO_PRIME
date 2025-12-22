@@ -6,6 +6,16 @@
   import { moduleVisibility } from '../../stores/moduleVisibility';
   import type { Base3DRenderer, Renderer3DConfig } from '../../rendering/renderers/Base3DRenderer';
 
+  // Extended renderer interface for optional methods on specific renderers
+  interface ExtendedRenderer extends Base3DRenderer {
+    setSmoothMode?(enabled: boolean): void;
+    setShowRings?(enabled: boolean): void;
+    setShowRadials?(enabled: boolean): void;
+    setShowFloor?(enabled: boolean): void;
+    cycleRenderMode?(): 'lines' | 'filled' | 'filled+lines';
+    render(spectrum: Float32Array, deltaTime: number, stereoSamples?: Float32Array): void;
+  }
+
   // Props
   export let visualizationType: 'cylindricalBars' | 'waterfall3d' | 'sphere' | 'stereoSpace' | 'tunnel' | 'terrain';
   export let visibilityKey: string;  // Key in moduleVisibility store
@@ -16,7 +26,7 @@
 
   let canvas: HTMLCanvasElement;
   let container: HTMLDivElement;
-  let renderer: Base3DRenderer | null = null;
+  let renderer: ExtendedRenderer | null = null;
   let gl: WebGL2RenderingContext | null = null;
   let spectrum = new Float32Array(512);
   let stereoSamples = new Float32Array(2048);
@@ -49,17 +59,15 @@
     renderCoordinator.setVisibility(RENDER_ID, visibility[visibilityKey] ?? false);
   }
 
-  // Track if renderer is available
-  let rendererNotImplemented = false;
+  // Track if renderer is available (currently all renderers are implemented)
+  const rendererNotImplemented = false;
 
   // Smooth mode toggle (for cylindrical bars)
   let smoothMode = false;
 
   function toggleSmoothMode() {
     smoothMode = !smoothMode;
-    if (renderer && 'setSmoothMode' in renderer) {
-      (renderer as any).setSmoothMode(smoothMode);
-    }
+    renderer?.setSmoothMode?.(smoothMode);
   }
 
   // Grid toggles (for cylindrical bars)
@@ -69,23 +77,17 @@
 
   function toggleRings() {
     showRings = !showRings;
-    if (renderer && 'setShowRings' in renderer) {
-      (renderer as any).setShowRings(showRings);
-    }
+    renderer?.setShowRings?.(showRings);
   }
 
   function toggleRadials() {
     showRadials = !showRadials;
-    if (renderer && 'setShowRadials' in renderer) {
-      (renderer as any).setShowRadials(showRadials);
-    }
+    renderer?.setShowRadials?.(showRadials);
   }
 
   function toggleFloor() {
     showFloor = !showFloor;
-    if (renderer && 'setShowFloor' in renderer) {
-      (renderer as any).setShowFloor(showFloor);
-    }
+    renderer?.setShowFloor?.(showFloor);
   }
 
   // Render mode for tunnel (cycles: lines → filled → filled+lines)
@@ -97,13 +99,14 @@
     : 'Both';
 
   function cycleTunnelMode() {
-    if (renderer && 'cycleRenderMode' in renderer) {
-      tunnelRenderMode = (renderer as any).cycleRenderMode();
+    const newMode = renderer?.cycleRenderMode?.();
+    if (newMode) {
+      tunnelRenderMode = newMode;
     }
   }
 
   // Dynamically import and create the appropriate renderer
-  async function createRenderer(): Promise<Base3DRenderer | null> {
+  async function createRenderer(): Promise<ExtendedRenderer | null> {
     if (!gl) return null;
 
     try {
@@ -155,7 +158,7 @@
     // Render the visualization (pass stereo samples for stereoSpace)
     if (visualizationType === 'stereoSpace') {
       const currentStereoSamples = get(audioEngine.stereoSamples);
-      (renderer as any).render(spectrum, deltaTime, currentStereoSamples);
+      renderer.render(spectrum, deltaTime, currentStereoSamples);
     } else {
       renderer.render(spectrum, deltaTime);
     }
