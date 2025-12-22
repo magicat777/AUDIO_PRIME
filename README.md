@@ -137,18 +137,50 @@ npm run build
 
 ### Keyboard Shortcuts
 
+#### Controls
 | Key | Action |
 |-----|--------|
-| `Space` | Toggle mute |
-| `M` | Toggle mute |
+| `Space` | Start/Stop capture |
+| `M` | Toggle menu |
 | `F` | Toggle fullscreen |
-| `ESC` | Exit fullscreen |
+| `ESC` | Exit fullscreen / Close menu |
 | `Q` | Quit application |
-| `D` | Toggle debug panel |
-| `T` | Reset tempo detection |
-| `B` | Toggle bass waterfall |
-| `Shift+A` | Auto-arrange panels |
-| `1-6` | Window size presets |
+
+#### 2D Panels
+| Key | Action |
+|-----|--------|
+| `S` | Spectrum |
+| `U` | VU Meters |
+| `B` | Bass Detail |
+| `W` | Waterfall |
+| `L` | LUFS |
+| `T` | Tempo/BPM |
+| `V` | Voice Detection |
+| `C` | Stereo Correlation |
+| `G` | Goniometer |
+| `O` | Oscilloscope |
+| `N` | Frequency Bands |
+| `D` | Debug |
+| `Alt+Shift+S` | Spotify |
+
+#### 3D Panels
+| Key | Action |
+|-----|--------|
+| `Shift+B` | 3D Bars (Cylinder) |
+| `Shift+W` | 3D Waterfall |
+| `Shift+F` | Frequency Sphere |
+| `Shift+S` | 3D Stereo Space |
+| `Shift+T` | Tunnel Effect |
+| `Shift+L` | Terrain Landscape |
+
+#### Layout Controls
+| Key | Action |
+|-----|--------|
+| `Alt+L` | Lock/Unlock all panels |
+| `Alt+T` | Toggle grid |
+| `Alt+S` | Toggle snap |
+| `Alt+A` | Auto-arrange |
+| `Alt+R` | Reset layout |
 
 ### Panel Controls
 Use the sidebar toggles to show/hide panels:

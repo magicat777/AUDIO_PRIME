@@ -103,6 +103,9 @@
   // Accordion state for 3D visualizations
   let viz3dExpanded = false;
 
+  // Accordion state for keyboard shortcuts
+  let shortcutsExpanded = false;
+
   // Count active 3D visualizations
   $: active3dCount = [
     $moduleVisibility.cylindricalBars,
@@ -465,16 +468,61 @@
 
     <section class="section">
       <h3>Keyboard Shortcuts</h3>
-      <div class="shortcuts">
-        <div class="shortcut"><kbd>Space</kbd> Start/Stop</div>
-        <div class="shortcut"><kbd>M</kbd> Toggle Menu</div>
-        <div class="shortcut"><kbd>F</kbd> Fullscreen</div>
-        <div class="shortcut"><kbd>Esc</kbd> Close Menu</div>
-        <div class="shortcut"><kbd>Shift</kbd>+<kbd>G</kbd> Toggle Grid</div>
-        <div class="shortcut"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> Toggle Snap</div>
-        <div class="shortcut"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> Reset Layout</div>
-        <div class="shortcut"><kbd>Shift</kbd>+<kbd>A</kbd> Auto-Arrange</div>
-        <div class="shortcut"><kbd>Q</kbd> Quit</div>
+      <div class="accordion-section">
+        <button
+          class="accordion-header"
+          class:expanded={shortcutsExpanded}
+          on:click={() => shortcutsExpanded = !shortcutsExpanded}
+        >
+          <svg class="accordion-icon" width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+            <path d="M4 2l4 4-4 4" stroke="currentColor" stroke-width="2" fill="none"/>
+          </svg>
+          <span class="accordion-title">All Shortcuts</span>
+        </button>
+        {#if shortcutsExpanded}
+          <div class="accordion-content shortcuts-content">
+            <!-- Controls -->
+            <div class="shortcut-category">Controls</div>
+            <div class="shortcut"><kbd>Space</kbd> Start/Stop</div>
+            <div class="shortcut"><kbd>M</kbd> Menu</div>
+            <div class="shortcut"><kbd>F</kbd> Fullscreen</div>
+            <div class="shortcut"><kbd>Esc</kbd> Exit Fullscreen / Close Menu</div>
+            <div class="shortcut"><kbd>Q</kbd> Quit</div>
+
+            <!-- 2D Panels -->
+            <div class="shortcut-category">2D Panels</div>
+            <div class="shortcut"><kbd>S</kbd> Spectrum</div>
+            <div class="shortcut"><kbd>U</kbd> VU Meters</div>
+            <div class="shortcut"><kbd>B</kbd> Bass Detail</div>
+            <div class="shortcut"><kbd>W</kbd> Waterfall</div>
+            <div class="shortcut"><kbd>L</kbd> LUFS</div>
+            <div class="shortcut"><kbd>T</kbd> Tempo</div>
+            <div class="shortcut"><kbd>V</kbd> Voice Detection</div>
+            <div class="shortcut"><kbd>C</kbd> Stereo Correlation</div>
+            <div class="shortcut"><kbd>G</kbd> Goniometer</div>
+            <div class="shortcut"><kbd>O</kbd> Oscilloscope</div>
+            <div class="shortcut"><kbd>N</kbd> Frequency Bands</div>
+            <div class="shortcut"><kbd>D</kbd> Debug</div>
+            <div class="shortcut"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> Spotify</div>
+
+            <!-- 3D Panels -->
+            <div class="shortcut-category">3D Panels</div>
+            <div class="shortcut"><kbd>Shift</kbd>+<kbd>B</kbd> 3D Bars</div>
+            <div class="shortcut"><kbd>Shift</kbd>+<kbd>W</kbd> 3D Waterfall</div>
+            <div class="shortcut"><kbd>Shift</kbd>+<kbd>F</kbd> Frequency Sphere</div>
+            <div class="shortcut"><kbd>Shift</kbd>+<kbd>S</kbd> 3D Stereo</div>
+            <div class="shortcut"><kbd>Shift</kbd>+<kbd>T</kbd> Tunnel</div>
+            <div class="shortcut"><kbd>Shift</kbd>+<kbd>L</kbd> Terrain</div>
+
+            <!-- Layout Controls -->
+            <div class="shortcut-category">Layout</div>
+            <div class="shortcut"><kbd>Alt</kbd>+<kbd>L</kbd> Lock/Unlock All</div>
+            <div class="shortcut"><kbd>Alt</kbd>+<kbd>T</kbd> Toggle Grid</div>
+            <div class="shortcut"><kbd>Alt</kbd>+<kbd>S</kbd> Toggle Snap</div>
+            <div class="shortcut"><kbd>Alt</kbd>+<kbd>A</kbd> Auto-Arrange</div>
+            <div class="shortcut"><kbd>Alt</kbd>+<kbd>R</kbd> Reset Layout</div>
+          </div>
+        {/if}
       </div>
     </section>
   </div>
@@ -670,31 +718,49 @@
     color: var(--meter-red);
   }
 
-  .shortcuts {
+  .shortcuts-content {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.35rem;
+    padding: 0.5rem !important;
+  }
+
+  .shortcut-category {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--accent-color);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-top: 0.5rem;
+    margin-bottom: 0.1rem;
+    padding-bottom: 0.2rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .shortcut-category:first-child {
+    margin-top: 0;
   }
 
   .shortcut {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    font-size: 0.85rem;
+    gap: 0.5rem;
+    font-size: 0.8rem;
     color: var(--text-secondary);
+    padding: 0.15rem 0;
   }
 
   kbd {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 24px;
-    padding: 0.15rem 0.4rem;
+    min-width: 20px;
+    padding: 0.1rem 0.35rem;
     background: var(--bg-tertiary);
     border: 1px solid var(--border-color);
     border-radius: 3px;
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     color: var(--text-primary);
   }
 
