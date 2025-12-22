@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { get } from 'svelte/store';
   import { audioEngine } from '../../core/AudioEngine';
   import { renderCoordinator } from '../../core/RenderCoordinator';
   import { moduleVisibility } from '../../stores/moduleVisibility';
@@ -18,12 +19,21 @@
   let renderer: Base3DRenderer | null = null;
   let gl: WebGL2RenderingContext | null = null;
   let spectrum = new Float32Array(512);
+  let stereoSamples = new Float32Array(2048);
   let lastFrameTime = 0;
 
   // Subscribe to spectrum data
   const unsubSpectrum = audioEngine.spectrum.subscribe((data) => {
     spectrum = data;
   });
+
+  // Subscribe to stereo samples (only for stereo space visualization)
+  let unsubStereo: (() => void) | null = null;
+  if (visualizationType === 'stereoSpace') {
+    unsubStereo = audioEngine.stereoSamples.subscribe((data) => {
+      stereoSamples = data;
+    });
+  }
 
   // Subscribe to beat info for reactive effects
   let beatPhase = 0;
@@ -96,8 +106,11 @@
           const { FrequencySphereRenderer } = await import('../../rendering/renderers/FrequencySphereRenderer');
           return new FrequencySphereRenderer(gl, canvas.width, canvas.height, config);
         }
+        case 'stereoSpace': {
+          const { StereoSpace3DRenderer } = await import('../../rendering/renderers/StereoSpace3DRenderer');
+          return new StereoSpace3DRenderer(gl, canvas.width, canvas.height, config);
+        }
         // The following renderers are not yet implemented - will show "Coming Soon" message
-        case 'stereoSpace':
         case 'tunnel':
         case 'terrain':
           console.log(`3D renderer "${visualizationType}" not yet implemented`);
@@ -123,8 +136,13 @@
     // Update beat info for reactive effects
     renderer.setBeatInfo(beatPhase, beatStrength);
 
-    // Render the visualization
-    renderer.render(spectrum, deltaTime);
+    // Render the visualization (pass stereo samples for stereoSpace)
+    if (visualizationType === 'stereoSpace') {
+      const currentStereoSamples = get(audioEngine.stereoSamples);
+      (renderer as any).render(spectrum, deltaTime, currentStereoSamples);
+    } else {
+      renderer.render(spectrum, deltaTime);
+    }
   }
 
   // Store observer reference for cleanup
@@ -175,6 +193,7 @@
   onDestroy(() => {
     resizeObserver?.disconnect();
     unsubSpectrum();
+    unsubStereo?.();
     unsubBeat();
     renderCoordinator.unregister(RENDER_ID);
     renderer?.destroy();
