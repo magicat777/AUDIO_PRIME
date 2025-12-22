@@ -112,13 +112,15 @@
       "depends": [
         "libpulse0",
         "libasound2"
-      ]
+      ],
+      "afterInstall": "build/afterInstall.sh"
     },
     "rpm": {
       "depends": [
         "pulseaudio-libs",
         "alsa-lib"
-      ]
+      ],
+      "afterInstall": "build/afterInstall.sh"
     },
     "mac": {
       "target": [
