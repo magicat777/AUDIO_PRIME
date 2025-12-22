@@ -92,8 +92,11 @@
           const { Waterfall3DRenderer } = await import('../../rendering/renderers/Waterfall3DRenderer');
           return new Waterfall3DRenderer(gl, canvas.width, canvas.height, config);
         }
+        case 'sphere': {
+          const { FrequencySphereRenderer } = await import('../../rendering/renderers/FrequencySphereRenderer');
+          return new FrequencySphereRenderer(gl, canvas.width, canvas.height, config);
+        }
         // The following renderers are not yet implemented - will show "Coming Soon" message
-        case 'sphere':
         case 'stereoSpace':
         case 'tunnel':
         case 'terrain':
