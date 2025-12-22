@@ -29,6 +29,10 @@ class RenderCoordinatorService {
   private lastFrameTime: number = 0;
   private isRunning: boolean = false;
 
+  // PERFORMANCE: Cache sorted callbacks to avoid per-frame array allocation
+  private sortedCallbacksCache: RenderCallback[] = [];
+  private callbacksDirty: boolean = false;
+
   // Performance tracking
   private frameCount: number = 0;
   private lastFpsUpdate: number = 0;
@@ -58,6 +62,9 @@ class RenderCoordinatorService {
       lastRenderTime: 0,
     });
 
+    // PERFORMANCE: Mark cache dirty when callbacks change
+    this.callbacksDirty = true;
+
     // Start the loop if not already running
     if (!this.isRunning) {
       this.start();
@@ -69,6 +76,9 @@ class RenderCoordinatorService {
    */
   unregister(id: string): void {
     this.callbacks.delete(id);
+
+    // PERFORMANCE: Mark cache dirty when callbacks change
+    this.callbacksDirty = true;
 
     // Stop the loop if no callbacks remain
     if (this.callbacks.size === 0) {
@@ -194,18 +204,24 @@ class RenderCoordinatorService {
   };
 
   /**
-   * Get callbacks sorted by priority
+   * Get callbacks sorted by priority (cached to avoid per-frame allocation)
    */
   private getSortedCallbacks(): RenderCallback[] {
-    const priorityOrder: Record<RenderPriority, number> = {
-      high: 0,
-      normal: 1,
-      low: 2,
-    };
+    // PERFORMANCE: Only regenerate sorted array when callbacks change
+    if (this.callbacksDirty) {
+      const priorityOrder: Record<RenderPriority, number> = {
+        high: 0,
+        normal: 1,
+        low: 2,
+      };
 
-    return Array.from(this.callbacks.values()).sort(
-      (a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]
-    );
+      this.sortedCallbacksCache = Array.from(this.callbacks.values()).sort(
+        (a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]
+      );
+      this.callbacksDirty = false;
+    }
+
+    return this.sortedCallbacksCache;
   }
 
   /**
