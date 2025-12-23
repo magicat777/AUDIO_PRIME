@@ -49,13 +49,27 @@ const defaultVisibility: ModuleVisibility = {
   terrain: false,
 };
 
+// Core modules that should always have at least one visible
+const CORE_MODULES: (keyof ModuleVisibility)[] = ['spectrum', 'vuMeters', 'bassDetail'];
+
+// Ensure at least one core module is visible
+function ensureMinimumVisibility(state: ModuleVisibility): ModuleVisibility {
+  const hasVisibleCore = CORE_MODULES.some(m => state[m]);
+  if (!hasVisibleCore) {
+    // If no core modules visible, enable spectrum as fallback
+    return { ...state, spectrum: true };
+  }
+  return state;
+}
+
 // Load from localStorage if available
 function loadFromStorage(): ModuleVisibility {
   if (typeof window !== 'undefined' && window.localStorage) {
     const stored = localStorage.getItem('audio-prime-modules');
     if (stored) {
       try {
-        return { ...defaultVisibility, ...JSON.parse(stored) };
+        const parsed = { ...defaultVisibility, ...JSON.parse(stored) };
+        return ensureMinimumVisibility(parsed);
       } catch {
         return defaultVisibility;
       }
@@ -73,20 +87,24 @@ function createModuleVisibilityStore() {
     toggle: (module: keyof ModuleVisibility) => {
       update(state => {
         const newState = { ...state, [module]: !state[module] };
+        // Ensure at least one core module remains visible
+        const safeState = ensureMinimumVisibility(newState);
         // Persist to localStorage
         if (typeof window !== 'undefined' && window.localStorage) {
-          localStorage.setItem('audio-prime-modules', JSON.stringify(newState));
+          localStorage.setItem('audio-prime-modules', JSON.stringify(safeState));
         }
-        return newState;
+        return safeState;
       });
     },
     set: (module: keyof ModuleVisibility, visible: boolean) => {
       update(state => {
         const newState = { ...state, [module]: visible };
+        // Ensure at least one core module remains visible
+        const safeState = ensureMinimumVisibility(newState);
         if (typeof window !== 'undefined' && window.localStorage) {
-          localStorage.setItem('audio-prime-modules', JSON.stringify(newState));
+          localStorage.setItem('audio-prime-modules', JSON.stringify(safeState));
         }
-        return newState;
+        return safeState;
       });
     },
     reset: () => {

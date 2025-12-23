@@ -256,15 +256,18 @@
     peakCtx.fillStyle = '#0a0c10';
     peakCtx.fillRect(0, 0, width, height);
 
-    // Draw grid lines (behind bars)
+    // Draw grid lines (behind bars) - matching ScaleOverlay exactly
     const graphRight = graphLeft + graphWidth;
-    peakCtx.strokeStyle = 'rgba(60, 70, 90, 0.4)';
+    peakCtx.strokeStyle = 'rgba(42, 48, 64, 0.5)';
     peakCtx.lineWidth = 1 * dpr;
 
-    // Horizontal grid lines (dB) - top half
-    const gridDbValues = [-10, -20, -30];  // Skip 0 and -40 (edges)
-    for (const db of gridDbValues) {
-      const normalizedDb = -db / 40;
+    // dB scale: -10dB at edges, -80dB at center (70dB range)
+    const DB_LABELS_TOP = [-10, -24, -36, -48, -60, -80];
+    const DB_LABELS_BOTTOM = [-60, -48, -36, -24, -10];
+
+    // Horizontal grid lines (dB) - top half: -10dB at top, -80dB at center
+    for (const db of DB_LABELS_TOP) {
+      const normalizedDb = (-10 - db) / 70; // 0 at -10dB (top), 1 at -80dB (center)
       const y = graphTop + normalizedDb * halfHeight;
       peakCtx.beginPath();
       peakCtx.moveTo(graphLeft, y);
@@ -272,9 +275,9 @@
       peakCtx.stroke();
     }
 
-    // Horizontal grid lines (dB) - bottom half (mirrored)
-    for (const db of gridDbValues) {
-      const normalizedDb = -db / 40;
+    // Horizontal grid lines (dB) - bottom half: -80dB at center, -10dB at bottom
+    for (const db of DB_LABELS_BOTTOM) {
+      const normalizedDb = (80 + db) / 70; // 0 at -80dB (center), 1 at -10dB (bottom)
       const y = centerY + normalizedDb * halfHeight;
       peakCtx.beginPath();
       peakCtx.moveTo(graphLeft, y);
@@ -292,9 +295,17 @@
       peakCtx.stroke();
     }
 
-    // Draw center line (brighter than grid)
-    peakCtx.strokeStyle = 'rgba(80, 80, 100, 0.6)';
-    peakCtx.lineWidth = 1 * dpr;
+    // Draw center line with glow effect (matching ScaleOverlay)
+    // Glow layer
+    peakCtx.strokeStyle = 'rgba(74, 158, 255, 0.3)';
+    peakCtx.lineWidth = 4 * dpr;
+    peakCtx.beginPath();
+    peakCtx.moveTo(graphLeft, centerY);
+    peakCtx.lineTo(graphRight, centerY);
+    peakCtx.stroke();
+    // Main line
+    peakCtx.strokeStyle = 'rgba(74, 158, 255, 0.7)';
+    peakCtx.lineWidth = 1.5 * dpr;
     peakCtx.beginPath();
     peakCtx.moveTo(graphLeft, centerY);
     peakCtx.lineTo(graphRight, centerY);
@@ -351,53 +362,55 @@
       }
     }
 
-    // Draw L/R labels
-    peakCtx.fillStyle = leftColor;
-    peakCtx.font = `bold ${12 * dpr}px monospace`;
-    peakCtx.textAlign = 'left';
-    peakCtx.textBaseline = 'top';
-    peakCtx.fillText('L', graphLeft + 5 * dpr, graphTop + 5 * dpr);
+    // Draw L/R labels on right side (matching ScaleOverlay)
+    peakCtx.font = `bold ${12 * dpr}px sans-serif`;
+    peakCtx.textAlign = 'right';
+    peakCtx.fillStyle = 'rgba(74, 158, 255, 0.6)';
 
-    peakCtx.fillStyle = rightColor;
-    peakCtx.fillText('R', graphLeft + 5 * dpr, centerY + 5 * dpr);
+    // L label at top-right
+    peakCtx.textBaseline = 'top';
+    peakCtx.fillText('L', graphRight - 5 * dpr, graphTop + 5 * dpr);
+
+    // R label at bottom-right
+    peakCtx.textBaseline = 'bottom';
+    peakCtx.fillText('R', graphRight - 5 * dpr, graphBottom - 5 * dpr);
 
     // Draw frequency scale at bottom
-    peakCtx.fillStyle = '#808080';
-    peakCtx.font = `${9 * dpr}px monospace`;
+    peakCtx.fillStyle = '#606060';
+    peakCtx.font = `${10 * dpr}px monospace`;
     peakCtx.textAlign = 'center';
     peakCtx.textBaseline = 'top';
-    const freqLabels = [50, 100, 200, 500, '1k', '2k', '5k', '10k', '20k'];
-    const freqValues = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+    const freqLabels = [20, 50, 100, 200, 500, '1k', '2k', '5k', '10k', '20k'];
+    const freqValues = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
     for (let i = 0; i < freqLabels.length; i++) {
       const x = graphLeft + (Math.log10(freqValues[i] / 20) / logRange) * graphWidth;
-      peakCtx.fillText(String(freqLabels[i]), x, graphBottom + 4 * dpr);
+      peakCtx.fillText(String(freqLabels[i]), x, graphBottom + 5 * dpr);
     }
 
-    // Draw dB scale on left side
-    // Top half: 0dB at top, lower dB toward center
-    // Bottom half: lower dB at center, 0dB at bottom
-    const dbLabels = [0, -10, -20, -30, -40];
-    peakCtx.fillStyle = '#808080';
-    peakCtx.font = `${9 * dpr}px monospace`;
+    // Draw dB scale on left side (matching ScaleOverlay exactly)
+    peakCtx.fillStyle = '#606060';
+    peakCtx.font = `${10 * dpr}px monospace`;
     peakCtx.textAlign = 'right';
     peakCtx.textBaseline = 'middle';
 
-    // Top half dB labels (L channel)
-    for (const db of dbLabels) {
-      // Map dB to position: 0dB at top, -40dB at center
-      const normalizedDb = -db / 40; // 0 -> 0, -40 -> 1
+    // Top half dB labels (L channel): -10dB at top, -80dB at center
+    for (const db of DB_LABELS_TOP) {
+      const normalizedDb = (-10 - db) / 70;
       const y = graphTop + normalizedDb * halfHeight;
-      peakCtx.fillText(`${db}`, graphLeft - 5 * dpr, y);
-    }
-
-    // Bottom half dB labels (R channel) - mirrored
-    for (const db of dbLabels) {
-      const normalizedDb = -db / 40;
-      const y = centerY + normalizedDb * halfHeight;
-      // Skip center label (already drawn for top half at -40)
-      if (db !== -40) {
+      // Skip -80 label (drawn separately at center)
+      if (db !== -80) {
         peakCtx.fillText(`${db}`, graphLeft - 5 * dpr, y);
       }
+    }
+
+    // Center label at -80dB
+    peakCtx.fillText('-80', graphLeft - 5 * dpr, centerY);
+
+    // Bottom half dB labels (R channel): -80dB at center, -10dB at bottom
+    for (const db of DB_LABELS_BOTTOM) {
+      const normalizedDb = (80 + db) / 70;
+      const y = centerY + normalizedDb * halfHeight;
+      peakCtx.fillText(`${db}`, graphLeft - 5 * dpr, y);
     }
   }
 
@@ -433,41 +446,53 @@
     peakCtx.fillStyle = '#0a0c10';
     peakCtx.fillRect(0, 0, width, height);
 
-    // Draw center line (L/R separator)
-    peakCtx.strokeStyle = 'rgba(100, 100, 120, 0.6)';
+    // dB scale: -10dB at edges, -80dB at center (70dB range) - matching ScaleOverlay
+    const DB_LABELS_TOP = [-10, -24, -36, -48, -60, -80];
+    const DB_LABELS_BOTTOM = [-60, -48, -36, -24, -10];
+
+    // Draw grid lines (matching ScaleOverlay)
+    peakCtx.strokeStyle = 'rgba(42, 48, 64, 0.5)';
     peakCtx.lineWidth = 1 * dpr;
+
+    // Horizontal grid lines (dB) - top half: -10dB at top, -80dB at center
+    for (const db of DB_LABELS_TOP) {
+      const normalizedDb = (-10 - db) / 70;
+      const y = graphTop + normalizedDb * halfHeight;
+      peakCtx.beginPath();
+      peakCtx.moveTo(graphLeft, y);
+      peakCtx.lineTo(graphRight, y);
+      peakCtx.stroke();
+    }
+
+    // Horizontal grid lines (dB) - bottom half: -80dB at center, -10dB at bottom
+    for (const db of DB_LABELS_BOTTOM) {
+      const normalizedDb = (80 + db) / 70;
+      const y = centerY + normalizedDb * halfHeight;
+      peakCtx.beginPath();
+      peakCtx.moveTo(graphLeft, y);
+      peakCtx.lineTo(graphRight, y);
+      peakCtx.stroke();
+    }
+
+    // Center line with glow effect (matching ScaleOverlay)
+    // Glow layer
+    peakCtx.strokeStyle = 'rgba(74, 158, 255, 0.3)';
+    peakCtx.lineWidth = 4 * dpr;
+    peakCtx.beginPath();
+    peakCtx.moveTo(graphLeft, centerY);
+    peakCtx.lineTo(graphRight, centerY);
+    peakCtx.stroke();
+    // Main line
+    peakCtx.strokeStyle = 'rgba(74, 158, 255, 0.7)';
+    peakCtx.lineWidth = 1.5 * dpr;
     peakCtx.beginPath();
     peakCtx.moveTo(graphLeft, centerY);
     peakCtx.lineTo(graphRight, centerY);
     peakCtx.stroke();
 
-    // Draw grid lines (for each half)
-    peakCtx.strokeStyle = 'rgba(60, 70, 90, 0.4)';
+    // Reset stroke style for other grid lines
+    peakCtx.strokeStyle = 'rgba(42, 48, 64, 0.5)';
     peakCtx.lineWidth = 1 * dpr;
-
-    // Horizontal grid lines (dB) - top half
-    for (const db of TECH_DB_LABELS) {
-      if (db >= -40) { // Only show top portion of dB range
-        const normalizedDb = (TECH_MAX_DB - db) / (TECH_MAX_DB - TECH_MIN_DB);
-        const y = graphTop + normalizedDb * halfHeight;
-        peakCtx.beginPath();
-        peakCtx.moveTo(graphLeft, y);
-        peakCtx.lineTo(graphRight, y);
-        peakCtx.stroke();
-      }
-    }
-
-    // Horizontal grid lines (dB) - bottom half (mirrored)
-    for (const db of TECH_DB_LABELS) {
-      if (db >= -40) {
-        const normalizedDb = (TECH_MAX_DB - db) / (TECH_MAX_DB - TECH_MIN_DB);
-        const y = centerY + normalizedDb * halfHeight;
-        peakCtx.beginPath();
-        peakCtx.moveTo(graphLeft, y);
-        peakCtx.lineTo(graphRight, y);
-        peakCtx.stroke();
-      }
-    }
 
     // Vertical grid lines (frequency) - logarithmic
     for (const freq of TECH_FREQ_LABELS) {
@@ -478,18 +503,21 @@
       peakCtx.stroke();
     }
 
-    // Draw L/R labels
-    peakCtx.fillStyle = 'rgba(100, 200, 100, 0.8)';
-    peakCtx.font = `bold ${12 * dpr}px monospace`;
-    peakCtx.textAlign = 'left';
-    peakCtx.textBaseline = 'top';
-    peakCtx.fillText('L', graphLeft + 5 * dpr, graphTop + 5 * dpr);
+    // Draw L/R labels on right side (matching ScaleOverlay)
+    peakCtx.font = `bold ${12 * dpr}px sans-serif`;
+    peakCtx.textAlign = 'right';
+    peakCtx.fillStyle = 'rgba(74, 158, 255, 0.6)';
 
-    peakCtx.fillStyle = 'rgba(100, 180, 255, 0.8)';
-    peakCtx.fillText('R', graphLeft + 5 * dpr, centerY + 5 * dpr);
+    // L label at top-right
+    peakCtx.textBaseline = 'top';
+    peakCtx.fillText('L', graphRight - 5 * dpr, graphTop + 5 * dpr);
+
+    // R label at bottom-right
+    peakCtx.textBaseline = 'bottom';
+    peakCtx.fillText('R', graphRight - 5 * dpr, graphBottom - 5 * dpr);
 
     // Draw frequency labels (bottom)
-    peakCtx.fillStyle = '#808080';
+    peakCtx.fillStyle = '#606060';
     peakCtx.font = `${10 * dpr}px monospace`;
     peakCtx.textAlign = 'center';
     peakCtx.textBaseline = 'top';
@@ -499,29 +527,30 @@
       peakCtx.fillText(label, x, graphBottom + 5 * dpr);
     }
 
-    // Draw dB scale on left side
-    const techDbLabels = [0, -10, -20, -30, -40];
-    peakCtx.fillStyle = '#808080';
-    peakCtx.font = `${9 * dpr}px monospace`;
+    // Draw dB scale on left side (matching ScaleOverlay exactly)
+    peakCtx.fillStyle = '#606060';
+    peakCtx.font = `${10 * dpr}px monospace`;
     peakCtx.textAlign = 'right';
     peakCtx.textBaseline = 'middle';
 
-    // Top half dB labels (L channel)
-    for (const db of techDbLabels) {
-      // Map dB to position: 0dB at top edge, -40dB at center
-      const normalizedDb = (TECH_MAX_DB - db) / (TECH_MAX_DB - (-40));
+    // Top half dB labels (L channel): -10dB at top, -80dB at center
+    for (const db of DB_LABELS_TOP) {
+      const normalizedDb = (-10 - db) / 70;
       const y = graphTop + normalizedDb * halfHeight;
-      peakCtx.fillText(`${db}`, graphLeft - 5 * dpr, y);
-    }
-
-    // Bottom half dB labels (R channel) - mirrored
-    for (const db of techDbLabels) {
-      const normalizedDb = (TECH_MAX_DB - db) / (TECH_MAX_DB - (-40));
-      const y = centerY + normalizedDb * halfHeight;
-      // Skip center label (already drawn for top half at -40)
-      if (db !== -40) {
+      // Skip -80 label (drawn separately at center)
+      if (db !== -80) {
         peakCtx.fillText(`${db}`, graphLeft - 5 * dpr, y);
       }
+    }
+
+    // Center label at -80dB
+    peakCtx.fillText('-80', graphLeft - 5 * dpr, centerY);
+
+    // Bottom half dB labels (R channel): -80dB at center, -10dB at bottom
+    for (const db of DB_LABELS_BOTTOM) {
+      const normalizedDb = (80 + db) / 70;
+      const y = centerY + normalizedDb * halfHeight;
+      peakCtx.fillText(`${db}`, graphLeft - 5 * dpr, y);
     }
 
     // Get peak holds for L/R
@@ -529,15 +558,16 @@
     const peakHoldRight = audioEngine.getSpectrumAnalyzerRight().getPeakHolds();
 
     // Helper function to convert amplitude to Y position
+    // Amplitude 0-1 maps to -80dB to -10dB (matching ScaleOverlay)
     function amplitudeToY(amplitude: number, isTop: boolean): number {
-      const dbValue = amplitude > 0.001 ? -80 + amplitude * 70 : TECH_MIN_DB;
-      const normalizedDb = (TECH_MAX_DB - dbValue) / (TECH_MAX_DB - TECH_MIN_DB);
+      // amplitude 0 = -80dB (center), amplitude 1 = -10dB (edge)
+      // Directly map amplitude to position (no dB conversion needed since data is already linear 0-1)
       if (isTop) {
-        // Top half: grows upward from center
-        return centerY - (1 - normalizedDb) * halfHeight;
+        // Top half: amplitude 0 at centerY, amplitude 1 at graphTop
+        return centerY - amplitude * halfHeight;
       } else {
-        // Bottom half: grows downward from center
-        return centerY + (1 - normalizedDb) * halfHeight;
+        // Bottom half: amplitude 0 at centerY, amplitude 1 at graphBottom
+        return centerY + amplitude * halfHeight;
       }
     }
 
