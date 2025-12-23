@@ -203,7 +203,8 @@
     const centerY = marginTop + halfHeight;  // Center line of graph
     const barWidth = graphWidth / barCount;
 
-    // Draw peak indicators as small horizontal lines
+    // Draw peak indicators as small horizontal lines (DPR-scaled)
+    const peakHeight = 2 * dpr;
     peakCtx.fillStyle = 'rgba(255, 255, 255, 0.95)';
 
     for (let i = 0; i < barCount; i++) {
@@ -213,14 +214,14 @@
       const peakValueLeft = peakHoldLeft[i];
       if (peakValueLeft > 0.02) {
         const yTop = centerY - peakValueLeft * halfHeight;
-        peakCtx.fillRect(x, yTop - 2, barWidth * 0.98, 2);
+        peakCtx.fillRect(x, yTop - peakHeight, barWidth * 0.98, peakHeight);
       }
 
       // Bottom half: RIGHT channel peak indicator
       const peakValueRight = peakHoldRight[i];
       if (peakValueRight > 0.02) {
         const yBottom = centerY + peakValueRight * halfHeight;
-        peakCtx.fillRect(x, yBottom, barWidth * 0.98, 2);
+        peakCtx.fillRect(x, yBottom, barWidth * 0.98, peakHeight);
       }
     }
   }
@@ -603,11 +604,11 @@
     }
     peakCtx.stroke();
 
-    // Draw left peak hold line
+    // Draw left peak hold line (bright white-green for visibility)
     if (peakHoldLeft.length > 0) {
       peakCtx.beginPath();
-      peakCtx.strokeStyle = 'rgba(200, 255, 200, 0.7)';
-      peakCtx.lineWidth = 1 * dpr;
+      peakCtx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      peakCtx.lineWidth = 1.5 * dpr;
       for (let i = 0; i < peakHoldLeft.length; i++) {
         const x = graphLeft + (i / (peakHoldLeft.length - 1)) * graphWidth;
         const y = amplitudeToY(peakHoldLeft[i], true);
@@ -649,11 +650,11 @@
     }
     peakCtx.stroke();
 
-    // Draw right peak hold line
+    // Draw right peak hold line (bright white for visibility)
     if (peakHoldRight.length > 0) {
       peakCtx.beginPath();
-      peakCtx.strokeStyle = 'rgba(200, 220, 255, 0.7)';
-      peakCtx.lineWidth = 1 * dpr;
+      peakCtx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      peakCtx.lineWidth = 1.5 * dpr;
       for (let i = 0; i < peakHoldRight.length; i++) {
         const x = graphLeft + (i / (peakHoldRight.length - 1)) * graphWidth;
         const y = amplitudeToY(peakHoldRight[i], false);
