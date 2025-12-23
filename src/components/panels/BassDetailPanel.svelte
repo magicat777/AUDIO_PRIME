@@ -2,14 +2,33 @@
   import { onMount, onDestroy } from 'svelte';
   import { audioEngine } from '../../core/AudioEngine';
   import { moduleVisibility } from '../../stores/moduleVisibility';
+  import { renderCoordinator } from '../../core/RenderCoordinator';
+
+  const RENDER_ID = 'bass-detail-panel';
 
   let canvas: HTMLCanvasElement;
   let waterfallCanvas: HTMLCanvasElement;
   let bassGraphContainer: HTMLDivElement;
   let ctx: CanvasRenderingContext2D | null = null;
   let waterfallCtx: CanvasRenderingContext2D | null = null;
-  let animationId: number | null = null;
   let spectrum = new Float32Array(512);
+
+  // Display mode: 'curve' for continuous line, 'bars' for discrete bars
+  type DisplayMode = 'curve' | 'bars';
+  let displayMode: DisplayMode = 'curve';
+
+  function toggleDisplayMode() {
+    displayMode = displayMode === 'curve' ? 'bars' : 'curve';
+  }
+
+  // Number of bars in BARS mode (1/3 octave-ish spacing for bass)
+  const BAR_COUNT = 16;
+
+  // Peak hold for BARS mode
+  const peakHold = new Float32Array(BAR_COUNT);
+  const peakDecayRate = 0.015; // How fast peaks decay (per frame)
+  const peakHoldTime = 30; // Frames to hold peak before decay starts
+  const peakHoldCounters = new Uint16Array(BAR_COUNT); // Hold counter for each bar
 
   // Bass frequency range for display
   const MIN_FREQ = 20;
@@ -35,8 +54,14 @@
 
   // Waterfall spectrogram settings
   const WATERFALL_HISTORY = 150; // Number of history lines to display
-  let waterfallWidth = 0;
-  let waterfallHeight = 0;
+
+  // Fixed internal resolution for high-quality rendering (independent of display size)
+  const WATERFALL_INTERNAL_WIDTH = 800;  // Internal pixel width for frequency resolution
+  const WATERFALL_INTERNAL_HEIGHT = 300; // Internal pixel height for time resolution
+
+  // Use fixed dimensions for consistent quality
+  const waterfallWidth = WATERFALL_INTERNAL_WIDTH;
+  const waterfallHeight = WATERFALL_INTERNAL_HEIGHT;
   let waterfallInitialized = false;
   let waterfallRowImageData: ImageData | null = null; // Reused for performance
 
@@ -101,6 +126,9 @@
     spectrum = data;
   });
 
+  // Sync visibility with RenderCoordinator
+  $: renderCoordinator.setVisibility(RENDER_ID, $moduleVisibility.bassDetail);
+
   // Frequency cursor handlers
   const padding = { left: 45, right: 15, top: 20, bottom: 30 };
 
@@ -136,8 +164,9 @@
       const barIndex = BASS_START_BAR + Math.max(0, Math.min(BASS_BAR_COUNT - 1, bassBarIndex));
 
       // Get the amplitude value (0-1 linear) and convert to dB
+      // Range: 0.0 = -80dB, 1.0 = -10dB (matches SpectrumAnalyzer)
       const amplitude = spectrum[barIndex] || 0;
-      cursorDb = amplitude > 0.001 ? -60 + amplitude * 60 : -100;
+      cursorDb = amplitude > 0.001 ? -80 + amplitude * 70 : -100;
     } else {
       cursorFreq = 0;
     }
@@ -168,18 +197,16 @@
       }
     });
 
-    // Handle resize for waterfall canvas
-    const waterfallResizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const { width, height } = entry.contentRect;
-        const dpr = window.devicePixelRatio || 1;
-        waterfallCanvas.width = width * dpr;
-        waterfallCanvas.height = height * dpr;
-        waterfallCtx!.scale(dpr, dpr);
-        waterfallWidth = width;
-        waterfallHeight = height;
-        waterfallInitialized = false; // Reset on resize
-      }
+    // Initialize waterfall canvas at fixed high resolution
+    // CSS will scale it to fit the display area
+    waterfallCanvas.width = WATERFALL_INTERNAL_WIDTH;
+    waterfallCanvas.height = WATERFALL_INTERNAL_HEIGHT;
+    // No dpr scaling needed - we render at fixed resolution and let CSS scale
+
+    // Watch for display resize to reset the waterfall (clears old content on resize)
+    const waterfallResizeObserver = new ResizeObserver(() => {
+      // Only reset initialization flag to redraw labels, don't change canvas size
+      waterfallInitialized = false;
     });
 
     resizeObserver.observe(canvas);
@@ -213,48 +240,18 @@
       }
       ctx.stroke();
 
-      // Horizontal dB grid lines
-      const dbLines = [-60, -48, -36, -24, -12, 0];
+      // Horizontal dB grid lines (range: -10dB at top to -80dB at bottom)
+      const dbLines = [-10, -24, -36, -48, -60, -80];
       ctx.beginPath();
       for (const db of dbLines) {
-        const y = padding.top + ((0 - db) / 60) * graphHeight;
+        const y = padding.top + ((-10 - db) / 70) * graphHeight;
         ctx.moveTo(padding.left, y);
         ctx.lineTo(width - padding.right, y);
       }
       ctx.stroke();
 
-      // Draw bass spectrum as filled area
-      ctx.beginPath();
-
-      // Start from bottom left
-      ctx.moveTo(padding.left, height - padding.bottom);
-
       // Use bars from the processed spectrum that correspond to bass frequencies
       const bassBarCount = BASS_END_BAR - BASS_START_BAR + 1;
-
-      for (let i = 0; i < bassBarCount; i++) {
-        const barIndex = BASS_START_BAR + i;
-        const normalizedIndex = i / (bassBarCount - 1);
-
-        // Get magnitude directly from processed spectrum (already 0-1 normalized)
-        const magnitude = barIndex < spectrum.length ? spectrum[barIndex] : 0;
-
-        // Calculate position
-        const x = padding.left + normalizedIndex * graphWidth;
-        const barHeight = magnitude * graphHeight;
-        const y = height - padding.bottom - barHeight;
-
-        if (i === 0) {
-          ctx.moveTo(x, y);
-        } else {
-          ctx.lineTo(x, y);
-        }
-      }
-
-      // Complete the path
-      ctx.lineTo(width - padding.right, height - padding.bottom);
-      ctx.lineTo(padding.left, height - padding.bottom);
-      ctx.closePath();
 
       // PERFORMANCE: Use cached gradient, only recreate on resize
       if (!cachedGradient || cachedGradientHeight !== height) {
@@ -264,42 +261,150 @@
         cachedGradient.addColorStop(1, 'rgba(139, 92, 246, 0.1)'); // Fade at bottom
         cachedGradientHeight = height;
       }
-      ctx.fillStyle = cachedGradient;
-      ctx.fill();
 
-      // Draw outline
-      ctx.strokeStyle = 'rgba(139, 92, 246, 0.9)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
+      if (displayMode === 'bars') {
+        // BARS MODE: Draw discrete frequency bars
+        const barGap = 3; // Gap between bars in pixels
+        const totalGaps = (BAR_COUNT - 1) * barGap;
+        const barWidth = (graphWidth - totalGaps) / BAR_COUNT;
 
-      for (let i = 0; i < bassBarCount; i++) {
-        const barIndex = BASS_START_BAR + i;
-        const normalizedIndex = i / (bassBarCount - 1);
+        for (let i = 0; i < BAR_COUNT; i++) {
+          // Map bar index to frequency range (logarithmic)
+          const freqRatio = i / (BAR_COUNT - 1);
+          const logMin = Math.log10(MIN_FREQ);
+          const logMax = Math.log10(MAX_FREQ);
+          const centerFreq = Math.pow(10, logMin + freqRatio * (logMax - logMin));
 
-        // Get magnitude directly from processed spectrum (already 0-1 normalized)
-        const magnitude = barIndex < spectrum.length ? spectrum[barIndex] : 0;
+          // Find the spectrum bin for this frequency
+          const binIndex = freqToBar(centerFreq);
 
-        const x = padding.left + normalizedIndex * graphWidth;
-        const barHeight = magnitude * graphHeight;
-        const y = height - padding.bottom - barHeight;
+          // Average a few bins around the center for smoother bars
+          let magnitude = 0;
+          const binRange = Math.max(1, Math.floor(bassBarCount / BAR_COUNT / 2));
+          let count = 0;
+          for (let b = -binRange; b <= binRange; b++) {
+            const idx = binIndex + b;
+            if (idx >= 0 && idx < spectrum.length) {
+              magnitude += spectrum[idx];
+              count++;
+            }
+          }
+          magnitude = count > 0 ? magnitude / count : 0;
 
-        if (i === 0) {
-          ctx.moveTo(x, y);
-        } else {
-          ctx.lineTo(x, y);
+          // Update peak hold
+          if (magnitude >= peakHold[i]) {
+            peakHold[i] = magnitude;
+            peakHoldCounters[i] = peakHoldTime; // Reset hold counter
+          } else {
+            // Decay peak after hold time
+            if (peakHoldCounters[i] > 0) {
+              peakHoldCounters[i]--;
+            } else {
+              peakHold[i] = Math.max(0, peakHold[i] - peakDecayRate);
+            }
+          }
+
+          // Calculate bar position and size
+          const x = padding.left + i * (barWidth + barGap);
+          const barHeight = magnitude * graphHeight;
+          const y = height - padding.bottom - barHeight;
+
+          // Draw filled bar with gradient
+          ctx.fillStyle = cachedGradient!;
+          ctx.fillRect(x, y, barWidth, barHeight);
+
+          // Draw bar outline
+          ctx.strokeStyle = 'rgba(139, 92, 246, 0.9)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x, y, barWidth, barHeight);
+
+          // Draw peak hold indicator
+          const peakHeight = peakHold[i] * graphHeight;
+          const peakY = height - padding.bottom - peakHeight;
+          if (peakHeight > barHeight + 2) { // Only show if peak is above current bar
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.fillRect(x, peakY, barWidth, 2);
+          }
+
+          // Draw frequency label below bar (only for some bars to avoid clutter)
+          if (i % 3 === 0 || i === BAR_COUNT - 1) {
+            ctx.fillStyle = '#606060';
+            ctx.font = '9px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillText(`${Math.round(centerFreq)}`, x + barWidth / 2, height - padding.bottom + 5);
+          }
         }
+      } else {
+        // CURVE MODE: Draw bass spectrum as filled area (original)
+        ctx.beginPath();
+
+        // Start from bottom left
+        ctx.moveTo(padding.left, height - padding.bottom);
+
+        for (let i = 0; i < bassBarCount; i++) {
+          const barIndex = BASS_START_BAR + i;
+          const normalizedIndex = i / (bassBarCount - 1);
+
+          // Get magnitude directly from processed spectrum (already 0-1 normalized)
+          const magnitude = barIndex < spectrum.length ? spectrum[barIndex] : 0;
+
+          // Calculate position
+          const x = padding.left + normalizedIndex * graphWidth;
+          const barHeight = magnitude * graphHeight;
+          const y = height - padding.bottom - barHeight;
+
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+
+        // Complete the path
+        ctx.lineTo(width - padding.right, height - padding.bottom);
+        ctx.lineTo(padding.left, height - padding.bottom);
+        ctx.closePath();
+
+        ctx.fillStyle = cachedGradient;
+        ctx.fill();
+
+        // Draw outline
+        ctx.strokeStyle = 'rgba(139, 92, 246, 0.9)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+
+        for (let i = 0; i < bassBarCount; i++) {
+          const barIndex = BASS_START_BAR + i;
+          const normalizedIndex = i / (bassBarCount - 1);
+
+          // Get magnitude directly from processed spectrum (already 0-1 normalized)
+          const magnitude = barIndex < spectrum.length ? spectrum[barIndex] : 0;
+
+          const x = padding.left + normalizedIndex * graphWidth;
+          const barHeight = magnitude * graphHeight;
+          const y = height - padding.bottom - barHeight;
+
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.stroke();
       }
-      ctx.stroke();
 
-      // Draw frequency labels
-      ctx.fillStyle = '#606060';
-      ctx.font = '10px monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
+      // Draw frequency labels (only in curve mode - bars mode draws its own)
+      if (displayMode === 'curve') {
+        ctx.fillStyle = '#606060';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
 
-      for (const freq of FREQ_LABELS) {
-        const x = padding.left + (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * graphWidth;
-        ctx.fillText(`${freq}`, x, height - padding.bottom + 5);
+        for (const freq of FREQ_LABELS) {
+          const x = padding.left + (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * graphWidth;
+          ctx.fillText(`${freq}`, x, height - padding.bottom + 5);
+        }
       }
 
       // Draw dB labels
@@ -307,7 +412,7 @@
       ctx.textBaseline = 'middle';
 
       for (const db of dbLines) {
-        const y = padding.top + ((0 - db) / 60) * graphHeight;
+        const y = padding.top + ((-10 - db) / 70) * graphHeight;
         ctx.fillText(`${db}`, padding.left - 5, y);
       }
 
@@ -318,44 +423,25 @@
       ctx.textBaseline = 'top';
       ctx.fillText('BASS DETAIL (20-200Hz)', padding.left, 3);
 
-      // === WATERFALL SPECTROGRAM (Optimized) ===
+      // === WATERFALL SPECTROGRAM (Fixed High-Resolution Rendering) ===
+      // Renders at fixed internal resolution (800x300) for consistent quality
+      // CSS scales the canvas to fit the display area
       if (waterfallCtx && waterfallWidth > 0 && waterfallHeight > 0) {
-        const dpr = window.devicePixelRatio || 1;
-        const wfPadding = { left: 45, right: 15, top: 15, bottom: 5 };
+        // Minimal padding - labels are HTML overlays outside the canvas
+        const wfPadding = { left: 0, right: 0, top: 0, bottom: 0 };
         const wfGraphWidth = waterfallWidth - wfPadding.left - wfPadding.right;
         const wfGraphHeight = waterfallHeight - wfPadding.top - wfPadding.bottom;
         const lineHeight = Math.max(1, Math.floor(wfGraphHeight / WATERFALL_HISTORY));
-        const pixelWidth = Math.floor(wfGraphWidth);
 
         // Initialize waterfall on first run or after resize
         if (!waterfallInitialized) {
           waterfallCtx.fillStyle = '#0a0a0f';
           waterfallCtx.fillRect(0, 0, waterfallWidth, waterfallHeight);
 
-          // Pre-allocate ImageData for row rendering
-          const rowWidthPxInit = Math.floor(wfGraphWidth * dpr);
-          const rowHeightPxInit = Math.max(1, Math.floor(lineHeight * dpr));
-          waterfallRowImageData = waterfallCtx.createImageData(rowWidthPxInit, rowHeightPxInit);
+          // Pre-allocate ImageData for row rendering (at fixed resolution)
+          waterfallRowImageData = waterfallCtx.createImageData(wfGraphWidth, lineHeight);
 
-          // Draw static labels (only on init/resize)
-          waterfallCtx.fillStyle = '#606060';
-          waterfallCtx.font = '9px monospace';
-          waterfallCtx.textAlign = 'center';
-          waterfallCtx.textBaseline = 'top';
-
-          const wfFreqLabels = [20, 40, 60, 100, 150, 200];
-          for (const freq of wfFreqLabels) {
-            const x = wfPadding.left + (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * wfGraphWidth;
-            waterfallCtx.fillText(`${freq}`, x, 2);
-          }
-
-          // Time indicators
-          waterfallCtx.fillStyle = '#505050';
-          waterfallCtx.textAlign = 'right';
-          waterfallCtx.textBaseline = 'middle';
-          waterfallCtx.fillText('now', wfPadding.left - 3, wfPadding.top + 5);
-          waterfallCtx.fillText(`-${Math.round(WATERFALL_HISTORY / 60)}s`, wfPadding.left - 3, waterfallHeight - wfPadding.bottom - 5);
-
+          // Labels are now rendered as HTML overlays for crisp text at any scale
           waterfallInitialized = true;
         }
 
@@ -364,36 +450,22 @@
         const srcY = wfPadding.top;
         const srcH = wfGraphHeight - lineHeight;
         if (srcH > 0) {
-          // Save the current transform, reset for pixel-perfect copy
-          waterfallCtx.save();
-          waterfallCtx.setTransform(1, 0, 0, 1, 0, 0);
-
-          // Copy existing content down (in device pixels)
-          const srcYPx = Math.floor(srcY * dpr);
-          const dstYPx = Math.floor((srcY + lineHeight) * dpr);
-          const srcHPx = Math.floor(srcH * dpr);
-          const leftPx = Math.floor(wfPadding.left * dpr);
-          const widthPx = Math.floor(wfGraphWidth * dpr);
-
           waterfallCtx.drawImage(
             waterfallCanvas,
-            leftPx, srcYPx, widthPx, srcHPx,  // Source rect
-            leftPx, dstYPx, widthPx, srcHPx   // Dest rect
+            wfPadding.left, srcY, wfGraphWidth, srcH,  // Source rect
+            wfPadding.left, srcY + lineHeight, wfGraphWidth, srcH   // Dest rect
           );
-
-          waterfallCtx.restore();
         }
 
         // Draw only the new top row using ImageData (fast pixel manipulation)
-        // Note: ImageData works in device pixels, ignoring canvas transforms
         if (!waterfallRowImageData) return;
-        const rowWidthPx = waterfallRowImageData.width;
-        const rowHeightPx = waterfallRowImageData.height;
+        const rowWidth = waterfallRowImageData.width;
+        const rowHeight = waterfallRowImageData.height;
         const pixels = waterfallRowImageData.data;
 
-        for (let x = 0; x < rowWidthPx; x++) {
+        for (let x = 0; x < rowWidth; x++) {
           // Map pixel x to frequency bin
-          const binIndex = Math.floor((x / rowWidthPx) * BASS_BAR_COUNT);
+          const binIndex = Math.floor((x / rowWidth) * BASS_BAR_COUNT);
           const barIndex = BASS_START_BAR + binIndex;
           const magnitude = barIndex < spectrum.length ? spectrum[barIndex] : 0;
 
@@ -401,8 +473,8 @@
           const lutIndex = Math.floor(Math.max(0, Math.min(1, magnitude)) * 255) * 4;
 
           // Fill all pixels in this column for the line height
-          for (let y = 0; y < rowHeightPx; y++) {
-            const pixelIndex = (y * rowWidthPx + x) * 4;
+          for (let y = 0; y < rowHeight; y++) {
+            const pixelIndex = (y * rowWidth + x) * 4;
             pixels[pixelIndex] = COLOR_LUT[lutIndex];         // R
             pixels[pixelIndex + 1] = COLOR_LUT[lutIndex + 1]; // G
             pixels[pixelIndex + 2] = COLOR_LUT[lutIndex + 2]; // B
@@ -410,16 +482,14 @@
           }
         }
 
-        // Put the new row at the top of the waterfall area (in device pixels)
-        const leftPx = Math.floor(wfPadding.left * dpr);
-        const topPx = Math.floor(wfPadding.top * dpr);
-        waterfallCtx.putImageData(waterfallRowImageData, leftPx, topPx);
+        // Put the new row at the top of the waterfall area
+        waterfallCtx.putImageData(waterfallRowImageData, wfPadding.left, wfPadding.top);
       }
 
-      animationId = requestAnimationFrame(render);
     }
 
-    render();
+    // Register with centralized render coordinator
+    renderCoordinator.register(RENDER_ID, render, 'normal');
 
     return () => {
       resizeObserver.disconnect();
@@ -429,9 +499,7 @@
 
   onDestroy(() => {
     unsubscribe();
-    if (animationId !== null) {
-      cancelAnimationFrame(animationId);
-    }
+    renderCoordinator.unregister(RENDER_ID);
   });
 </script>
 
@@ -445,6 +513,17 @@
     on:mouseleave={handleMouseLeave}
   >
     <canvas bind:this={canvas}></canvas>
+
+    <!-- Display Mode Toggle -->
+    <button
+      class="mode-toggle"
+      on:click={toggleDisplayMode}
+      title="Toggle between Curve and Bars display"
+      aria-label="Toggle display mode"
+    >
+      <span class="toggle-label">{displayMode === 'curve' ? 'CURVE' : 'BARS'}</span>
+      <span class="toggle-indicator" class:bars-mode={displayMode === 'bars'}></span>
+    </button>
 
     <!-- Frequency Cursor -->
     {#if cursorVisible && cursorFreq > 0}
@@ -468,7 +547,26 @@
         <span class="legend-high"></span>
       </span>
     </div>
-    <canvas bind:this={waterfallCanvas}></canvas>
+    <div class="waterfall-content">
+      <!-- Frequency scale (top) -->
+      <div class="wf-freq-scale">
+        <span style="left: 0%">20</span>
+        <span style="left: 30%">40</span>
+        <span style="left: 48%">60</span>
+        <span style="left: 70%">100</span>
+        <span style="left: 88%">150</span>
+        <span style="left: 100%">200</span>
+      </div>
+      <!-- Time scale (left) -->
+      <div class="wf-time-scale">
+        <span class="wf-time-now">now</span>
+        <span class="wf-time-past">-{Math.round(WATERFALL_HISTORY / 60)}s</span>
+      </div>
+      <!-- Canvas -->
+      <div class="wf-canvas-container">
+        <canvas bind:this={waterfallCanvas}></canvas>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -549,9 +647,63 @@
     background: linear-gradient(90deg, #ff8800, #ffffff);
   }
 
-  .waterfall-section canvas {
+  /* Waterfall content layout with HTML labels */
+  .waterfall-content {
     flex: 1;
+    display: grid;
+    grid-template-columns: 30px 1fr;
+    grid-template-rows: 16px 1fr;
+    gap: 2px;
+    min-height: 0;
+    padding-right: 15px;
+  }
+
+  .wf-freq-scale {
+    grid-column: 2;
+    grid-row: 1;
+    position: relative;
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+  }
+
+  .wf-freq-scale span {
+    position: absolute;
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+
+  .wf-time-scale {
+    grid-column: 1;
+    grid-row: 2;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding-right: 4px;
+    font-size: 9px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+  }
+
+  .wf-time-now {
+    padding-top: 2px;
+  }
+
+  .wf-time-past {
+    padding-bottom: 2px;
+  }
+
+  .wf-canvas-container {
+    grid-column: 2;
+    grid-row: 2;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .wf-canvas-container canvas {
     width: 100%;
+    height: 100%;
   }
 
   /* Frequency Cursor */
@@ -599,5 +751,48 @@
     font-size: 10px;
     font-family: monospace;
     color: var(--text-secondary);
+  }
+
+  /* Display Mode Toggle */
+  .mode-toggle {
+    position: absolute;
+    top: 3px;
+    right: 15px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    background: rgba(30, 35, 45, 0.9);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 4px;
+    color: #a0a0a0;
+    font-size: 10px;
+    font-family: monospace;
+    cursor: pointer;
+    z-index: 20;
+    transition: all 0.15s ease;
+  }
+
+  .mode-toggle:hover {
+    background: rgba(40, 50, 70, 0.95);
+    border-color: rgba(139, 92, 246, 0.6);
+    color: #ffffff;
+  }
+
+  .toggle-label {
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+
+  .toggle-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #8b5cf6;
+    transition: background 0.15s ease;
+  }
+
+  .toggle-indicator.bars-mode {
+    background: #22c55e;
   }
 </style>

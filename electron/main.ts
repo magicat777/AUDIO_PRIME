@@ -106,6 +106,13 @@ const IPC = {
   AUDIO_STOP: 'audio:stop',
   AUDIO_SELECT_DEVICE: 'audio:select-device',
   WINDOW_FULLSCREEN: 'window:fullscreen',
+  WINDOW_QUIT: 'window:quit',
+  // Layout persistence
+  LAYOUT_SAVE: 'layout:save',
+  LAYOUT_LOAD: 'layout:load',
+  // Settings persistence
+  SETTINGS_GET: 'settings:get',
+  SETTINGS_SET: 'settings:set',
   // Spotify channels
   SPOTIFY_CONNECT: 'spotify:connect',
   SPOTIFY_DISCONNECT: 'spotify:disconnect',
@@ -237,6 +244,15 @@ function createWindow(): void {
     stopAudioCapture();
   });
 
+  // Notify renderer of fullscreen state changes for proportional panel scaling
+  mainWindow.on('enter-full-screen', () => {
+    mainWindow?.webContents.send('window:fullscreen-change', true);
+  });
+
+  mainWindow.on('leave-full-screen', () => {
+    mainWindow?.webContents.send('window:fullscreen-change', false);
+  });
+
   // Security: Open external links in default browser, not in app
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
@@ -275,6 +291,118 @@ ipcMain.handle(IPC.WINDOW_FULLSCREEN, () => {
     return mainWindow.isFullScreen();
   }
   return false;
+});
+
+ipcMain.handle(IPC.WINDOW_QUIT, () => {
+  app.quit();
+});
+
+// ============================================
+// Layout Persistence (File-based)
+// ============================================
+
+const LAYOUT_FILENAME = 'audio-prime-layout.json';
+
+/**
+ * Get the path to the layout file in user data directory
+ */
+function getLayoutFilePath(): string {
+  return join(app.getPath('userData'), LAYOUT_FILENAME);
+}
+
+/**
+ * Save layout data to file
+ */
+ipcMain.handle(IPC.LAYOUT_SAVE, async (_, layoutData: unknown) => {
+  try {
+    const filePath = getLayoutFilePath();
+    const jsonData = JSON.stringify(layoutData, null, 2);
+    fs.writeFileSync(filePath, jsonData, 'utf-8');
+    console.log('Layout saved to:', filePath);
+    return { success: true, path: filePath };
+  } catch (error) {
+    console.error('Error saving layout:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+/**
+ * Load layout data from file
+ */
+ipcMain.handle(IPC.LAYOUT_LOAD, async () => {
+  try {
+    const filePath = getLayoutFilePath();
+    if (!fs.existsSync(filePath)) {
+      console.log('No saved layout file found');
+      return { success: true, data: null };
+    }
+    const jsonData = fs.readFileSync(filePath, 'utf-8');
+    const layoutData = JSON.parse(jsonData);
+    console.log('Layout loaded from:', filePath);
+    return { success: true, data: layoutData };
+  } catch (error) {
+    console.error('Error loading layout:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+// ============================================
+// Settings Persistence (File-based)
+// ============================================
+
+const SETTINGS_FILENAME = 'audio-prime-settings.json';
+
+/**
+ * Get the path to the settings file in user data directory
+ */
+function getSettingsFilePath(): string {
+  return join(app.getPath('userData'), SETTINGS_FILENAME);
+}
+
+/**
+ * Load all settings from file
+ */
+function loadSettings(): Record<string, unknown> {
+  try {
+    const filePath = getSettingsFilePath();
+    if (!fs.existsSync(filePath)) {
+      return {};
+    }
+    const jsonData = fs.readFileSync(filePath, 'utf-8');
+    return JSON.parse(jsonData) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Save all settings to file
+ */
+function saveSettings(settings: Record<string, unknown>): void {
+  try {
+    const filePath = getSettingsFilePath();
+    const jsonData = JSON.stringify(settings, null, 2);
+    fs.writeFileSync(filePath, jsonData, 'utf-8');
+  } catch (error) {
+    console.error('Error saving settings:', error);
+  }
+}
+
+/**
+ * Get a setting value
+ */
+ipcMain.handle(IPC.SETTINGS_GET, async (_, key: string) => {
+  const settings = loadSettings();
+  return settings[key];
+});
+
+/**
+ * Set a setting value
+ */
+ipcMain.handle(IPC.SETTINGS_SET, async (_, key: string, value: unknown) => {
+  const settings = loadSettings();
+  settings[key] = value;
+  saveSettings(settings);
 });
 
 // ============================================

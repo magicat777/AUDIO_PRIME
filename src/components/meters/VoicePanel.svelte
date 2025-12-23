@@ -3,6 +3,13 @@
   import { get } from 'svelte/store';
   import { audioEngine } from '../../core/AudioEngine';
   import type { VoiceInfo } from '../../analysis/VoiceDetector';
+  import { renderCoordinator } from '../../core/RenderCoordinator';
+  import { moduleVisibility } from '../../stores/moduleVisibility';
+
+  const RENDER_ID = 'voice-panel';
+
+  // Sync visibility with RenderCoordinator
+  $: renderCoordinator.setVisibility(RENDER_ID, $moduleVisibility.voiceDetection);
 
   // Voice info state
   let voiceInfo: VoiceInfo = {
@@ -21,7 +28,6 @@
   };
 
   // Animation frame tracking
-  let animationId: number | null = null;
   let frameCount = 0;
 
   // Reactive triggers for Svelte 5
@@ -37,11 +43,10 @@
   $: displayPitchStability = voiceInfo.pitchStability + frameCount * 0;
   $: displayHasVibrato = voiceInfo.hasVibrato;
 
-  // Update loop using requestAnimationFrame
+  // Update loop using RenderCoordinator
   function updateVoiceInfo() {
     voiceInfo = get(audioEngine.voiceInfo);
     frameCount++;
-    animationId = requestAnimationFrame(updateVoiceInfo);
   }
 
   // Get color based on confidence
@@ -75,13 +80,12 @@
   }
 
   onMount(() => {
-    animationId = requestAnimationFrame(updateVoiceInfo);
+    // Register with centralized render coordinator (low priority)
+    renderCoordinator.register(RENDER_ID, updateVoiceInfo, 'low');
   });
 
   onDestroy(() => {
-    if (animationId !== null) {
-      cancelAnimationFrame(animationId);
-    }
+    renderCoordinator.unregister(RENDER_ID);
   });
 </script>
 

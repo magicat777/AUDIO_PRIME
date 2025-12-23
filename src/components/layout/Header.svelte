@@ -32,6 +32,10 @@
       await audioEngine.start();
     }
   }
+
+  function handleQuit() {
+    window.electronAPI?.window.quit();
+  }
 </script>
 
 <header class="header">
@@ -77,6 +81,12 @@
       <span class="stat-label">MEM</span>
       <span class="stat-value mono">{memoryUsage.toFixed(0)}MB</span>
     </div>
+    <button class="power-button" on:click={handleQuit} aria-label="Quit application" title="Quit (Q)">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+        <line x1="12" y1="2" x2="12" y2="12" />
+      </svg>
+    </button>
   </div>
 </header>
 
@@ -212,5 +222,26 @@
 
   .stat-value.warning {
     color: var(--warning-color);
+  }
+
+  .power-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid var(--error-color);
+    border-radius: 4px;
+    color: var(--error-color);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    margin-left: 0.5rem;
+  }
+
+  .power-button:hover {
+    background: rgba(239, 68, 68, 0.3);
+    border-color: var(--error-color);
+    color: var(--error-color);
   }
 </style>

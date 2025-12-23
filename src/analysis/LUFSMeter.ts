@@ -48,7 +48,10 @@ export class LUFSMeter {
   private shortTermWritePos = 0;
 
   // Integrated loudness gating
-  private gatingBlocks: number[] = []; // 400ms block powers
+  // PERFORMANCE: Limit gating blocks to ~5 minutes of history to prevent unbounded growth
+  // At 400ms blocks, 5 minutes = 750 blocks
+  private static readonly MAX_GATING_BLOCKS = 750;
+  private gatingBlocks: number[] = []; // 400ms block powers (capped)
   private blockAccumulator: number = 0;
   private blockSampleCount = 0;
   private readonly blockSize: number; // 400ms in samples
@@ -178,6 +181,10 @@ export class LUFSMeter {
       if (this.blockSampleCount >= this.blockSize) {
         const blockPower = this.blockAccumulator / this.blockSampleCount;
         this.gatingBlocks.push(blockPower);
+        // PERFORMANCE: Cap gating blocks to prevent unbounded memory growth
+        if (this.gatingBlocks.length > LUFSMeter.MAX_GATING_BLOCKS) {
+          this.gatingBlocks.shift();
+        }
         this.blockAccumulator = 0;
         this.blockSampleCount = 0;
       }

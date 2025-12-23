@@ -67,6 +67,18 @@ export interface AudioSourceInfo {
   available: boolean;
 }
 
+export interface LayoutSaveResult {
+  success: boolean;
+  path?: string;
+  error?: string;
+}
+
+export interface LayoutLoadResult {
+  success: boolean;
+  data?: unknown;
+  error?: string;
+}
+
 export interface ElectronAPI {
   audio: {
     getDevices: () => Promise<AudioDevice[]>;
@@ -76,10 +88,20 @@ export interface ElectronAPI {
   };
   window: {
     toggleFullscreen: () => Promise<boolean>;
+    quit: () => Promise<void>;
+    onFullscreenChange: (callback: (isFullscreen: boolean) => void) => () => void;
   };
   system: {
     getMetrics: () => Promise<SystemMetrics>;
     getAudioInfo: () => Promise<AudioSourceInfo>;
+  };
+  layout: {
+    save: (data: unknown) => Promise<LayoutSaveResult>;
+    load: () => Promise<LayoutLoadResult>;
+  };
+  settings: {
+    get: (key: string) => Promise<unknown>;
+    set: (key: string, value: unknown) => Promise<void>;
   };
   spotify: {
     connect: () => Promise<{ success: boolean; error?: string }>;
@@ -118,10 +140,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   window: {
     toggleFullscreen: () => ipcRenderer.invoke('window:fullscreen'),
+    quit: () => ipcRenderer.invoke('window:quit'),
+    onFullscreenChange: (callback: (isFullscreen: boolean) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, isFullscreen: boolean) => {
+        callback(isFullscreen);
+      };
+      ipcRenderer.on('window:fullscreen-change', listener);
+      return () => {
+        ipcRenderer.removeListener('window:fullscreen-change', listener);
+      };
+    },
   },
   system: {
     getMetrics: () => ipcRenderer.invoke('system:metrics'),
     getAudioInfo: () => ipcRenderer.invoke('system:audio-info'),
+  },
+  layout: {
+    save: (data: unknown) => ipcRenderer.invoke('layout:save', data),
+    load: () => ipcRenderer.invoke('layout:load'),
+  },
+  settings: {
+    get: (key: string) => ipcRenderer.invoke('settings:get', key),
+    set: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),
   },
   spotify: {
     connect: () => ipcRenderer.invoke('spotify:connect'),

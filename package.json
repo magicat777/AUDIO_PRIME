@@ -1,6 +1,6 @@
 {
   "name": "audio-prime",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Professional real-time audio spectrum analyzer for Linux with LUFS metering, beat detection, and Spotify integration",
   "homepage": "https://github.com/magicat777/AUDIO_PRIME",
   "main": "dist-electron/main.js",
@@ -111,14 +111,18 @@
     "deb": {
       "depends": [
         "libpulse0",
-        "libasound2"
-      ]
+        "libasound2",
+        "pulseaudio-utils"
+      ],
+      "afterInstall": "build/afterInstall.sh"
     },
     "rpm": {
       "depends": [
         "pulseaudio-libs",
-        "alsa-lib"
-      ]
+        "alsa-lib",
+        "pulseaudio-utils"
+      ],
+      "afterInstall": "build/afterInstall.sh"
     }
   }
 }

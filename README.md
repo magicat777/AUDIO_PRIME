@@ -4,20 +4,14 @@
 
 A modern, high-performance audio analysis application built with Electron + Svelte 5, featuring studio-grade metering, advanced visualizations, and Spotify integration.
 
-![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Version](https://img.shields.io/badge/version-1.2.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux-orange)
 ![Electron](https://img.shields.io/badge/electron-35+-green)
 ![TypeScript](https://img.shields.io/badge/typescript-5.7+-blue)
 ![Svelte](https://img.shields.io/badge/svelte-5+-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
----
-
-<p align="center">
-  <img src="audio_prime_layout_all.png" alt="AUDIO_PRIME Screenshot" width="900">
-  <br>
-  <em>Full application layout with spectrum analyzer, LUFS metering, BPM detection, voice analysis, and Spotify integration</em>
-</p>
+![AUDIO_PRIME Screenshot](docs/images/audio_prime_main.png)
 
 ---
 
@@ -49,10 +43,12 @@ For cross-platform pro audio applications, native development (Swift/C++) is the
 
 ### Spectrum Analysis
 - **512-Bar Spectrum Analyzer** - Logarithmic frequency display from 20Hz to 20kHz
-- **Enhanced Bass Detail** - Dedicated panel with optimized 20-500Hz resolution
+- **70dB Dynamic Range** - Extended range (-80dB to -10dB) for detailed low-level analysis
+- **Enhanced Bass Detail** - Dedicated panel with optimized 20-200Hz resolution
 - **Waterfall Spectrogram** - Time-frequency visualization with 60 FPS scrolling
-- **Frequency Band Analysis** - Sub, Low, Mid, High, Presence, Air breakdown
+- **Frequency Band Analysis** - Sub-Bass, Bass, Low-Mid, Mid, Upper-Mid, Presence, Brilliance
 - **Multi-Resolution FFT** - Adaptive resolution for optimal frequency/time tradeoff
+- **Perceptual Weighting** - Psychoacoustic compensation for balanced visual display
 
 ### Professional Metering
 - **LUFS Metering** - ITU-R BS.1770-4 compliant loudness measurement
@@ -76,6 +72,14 @@ For cross-platform pro audio applications, native development (Swift/C++) is the
 - **M/S Metering** - Mid/Side level analysis
 - **Oscilloscope** - Waveform display with auto-gain
 
+### 3D Visualizations (v1.2.0)
+- **Cylindrical Bars** - 3D spectrum arranged around a cylinder with auto-rotation, optional rings/radials/floor
+- **3D Waterfall** - Spectrum history rendered as a scrolling 3D surface mesh
+- **Frequency Sphere** - Pulsating sphere with beat-reactive scaling and frequency-mapped spikes
+- **3D Stereo Space** - Point cloud visualization of stereo field with color-coded L/R channels
+- **Tunnel Effect** - Forward-scrolling concentric rings (lines/filled/both render modes)
+- **Terrain Landscape** - Fly-over spectrum terrain with fog depth and multi-pass smoothing
+
 ### Spotify Integration
 - **Now Playing** - Track, artist, album display with album art
 - **Playback Controls** - Play/Pause, Previous, Next, Seek
@@ -85,14 +89,36 @@ For cross-platform pro audio applications, native development (Swift/C++) is the
 
 ## Installation
 
+> **Note:** AUDIO_PRIME currently supports **Linux only** due to limitations with system audio capture in Electron on macOS and Windows.
+
 ### Download (Recommended)
 
-Download the latest release:
-- **AppImage** - Universal Linux (recommended)
+Download the latest release from [Releases](https://github.com/magicat777/AUDIO_PRIME/releases):
+- **AppImage** - Universal Linux (recommended, no install required)
 - **.deb** - Ubuntu, Debian, Pop!_OS, Linux Mint
 - **.rpm** - Fedora, RHEL, CentOS, openSUSE
 
-See [Releases](https://github.com/magicat777/AUDIO_PRIME/releases)
+### Linux Installation
+
+#### AppImage (Easiest)
+```bash
+chmod +x AUDIO_PRIME-*.AppImage
+./AUDIO_PRIME-*.AppImage
+```
+
+#### Debian/Ubuntu (.deb)
+```bash
+# Recommended: Use dpkg directly to avoid apt sandbox warnings
+sudo dpkg -i AUDIO_PRIME-*-linux-amd64.deb
+
+# Install any missing dependencies
+sudo apt-get install -f
+```
+
+#### Fedora/RHEL (.rpm)
+```bash
+sudo rpm -i AUDIO_PRIME-*-linux-x86_64.rpm
+```
 
 ### System Requirements
 
@@ -144,15 +170,50 @@ See the [User Guide](docs/USER_GUIDE.md#spotify-integration) for detailed instru
 
 ### Keyboard Shortcuts
 
+#### Controls
 | Key | Action |
 |-----|--------|
-| `Space` | Toggle mute |
-| `M` | Toggle mute |
+| `Space` | Start/Stop capture |
+| `M` | Toggle menu |
 | `F` | Toggle fullscreen |
-| `D` | Toggle debug panel |
-| `T` | Reset tempo detection |
-| `B` | Toggle bass waterfall |
-| `1-6` | Window size presets |
+| `ESC` | Exit fullscreen / Close menu |
+| `Q` | Quit application |
+
+#### 2D Panels
+| Key | Action |
+|-----|--------|
+| `S` | Spectrum |
+| `U` | VU Meters |
+| `B` | Bass Detail |
+| `W` | Waterfall |
+| `L` | LUFS |
+| `T` | Tempo/BPM |
+| `V` | Voice Detection |
+| `C` | Stereo Correlation |
+| `G` | Goniometer |
+| `O` | Oscilloscope |
+| `N` | Frequency Bands |
+| `D` | Debug |
+| `Alt+Shift+S` | Spotify |
+
+#### 3D Panels
+| Key | Action |
+|-----|--------|
+| `Shift+B` | 3D Bars (Cylinder) |
+| `Shift+W` | 3D Waterfall |
+| `Shift+F` | Frequency Sphere |
+| `Shift+S` | 3D Stereo Space |
+| `Shift+T` | Tunnel Effect |
+| `Shift+L` | Terrain Landscape |
+
+#### Layout Controls
+| Key | Action |
+|-----|--------|
+| `Alt+L` | Lock/Unlock all panels |
+| `Alt+T` | Toggle grid |
+| `Alt+S` | Toggle snap |
+| `Alt+A` | Auto-arrange |
+| `Alt+R` | Reset layout |
 
 ### Panel Controls
 Use the sidebar toggles to show/hide panels:
@@ -162,9 +223,19 @@ Use the sidebar toggles to show/hide panels:
 - LUFS Metering
 - BPM/Tempo
 - Voice Detection
-- Stereo Analysis
+- Stereo Analysis (Goniometer, Correlation, Oscilloscope)
 - Debug Panel
 - Spotify
+- 3D Visualizations (Cylindrical Bars, Frequency Sphere, 3D Stereo, 3D Waterfall, Tunnel, Terrain)
+
+### Layout System
+- **Drag & Drop** - Move panels anywhere on the canvas
+- **Resize** - Drag panel edges to resize
+- **Lock/Unlock** - Lock panels to prevent accidental moves
+- **Auto-Arrange** - Press `Shift+A` to auto-arrange all panels
+- **Layout Presets** - Save up to 5 custom layouts
+- **Grid Snap** - Optional grid snapping for alignment
+- **Persistent Storage** - Layouts saved automatically to `~/.config/audio-prime/`
 
 ---
 
@@ -189,7 +260,8 @@ Use the sidebar toggles to show/hide panels:
 | UI | Svelte 5 |
 | Build | Vite 6 |
 | Language | TypeScript 5.7 (strict mode) |
-| Rendering | Canvas 2D |
+| 2D Rendering | Canvas 2D + WebGL2 |
+| 3D Rendering | WebGL2 (custom shaders) |
 | Audio | PulseAudio/PipeWire (parec) |
 | Testing | Vitest |
 | Linting | ESLint + Security plugins |
@@ -240,6 +312,15 @@ AUDIO_PRIME/
 - ✅ Environment-based credential management
 - ✅ ESLint security plugins
 - ✅ Automated vulnerability scanning (CI/CD)
+
+### Build Targets
+| Platform | Format | Status |
+|----------|--------|--------|
+| Linux | AppImage | ✅ Supported |
+| Linux | .deb | ✅ Supported |
+| Linux | .rpm | ✅ Supported |
+| macOS | .dmg | ❌ Not supported (audio capture limitations) |
+| Windows | NSIS | ❌ Not supported (audio capture limitations) |
 
 ---
 

@@ -66,6 +66,18 @@ export interface AudioSourceInfo {
   available: boolean;
 }
 
+export interface LayoutSaveResult {
+  success: boolean;
+  path?: string;
+  error?: string;
+}
+
+export interface LayoutLoadResult {
+  success: boolean;
+  data?: unknown;
+  error?: string;
+}
+
 export interface ElectronAPI {
   audio: {
     getDevices: () => Promise<AudioDevice[]>;
@@ -75,10 +87,20 @@ export interface ElectronAPI {
   };
   window: {
     toggleFullscreen: () => Promise<boolean>;
+    quit: () => Promise<void>;
+    onFullscreenChange: (callback: (isFullscreen: boolean) => void) => () => void;
   };
   system: {
     getMetrics: () => Promise<SystemMetrics>;
     getAudioInfo: () => Promise<AudioSourceInfo>;
+  };
+  layout: {
+    save: (data: unknown) => Promise<LayoutSaveResult>;
+    load: () => Promise<LayoutLoadResult>;
+  };
+  settings: {
+    get: (key: string) => Promise<unknown>;
+    set: (key: string, value: unknown) => Promise<void>;
   };
   spotify: {
     connect: () => Promise<{ success: boolean; error?: string }>;

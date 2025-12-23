@@ -5,6 +5,13 @@
   import type { BeatInfo } from '../../analysis/BeatDetector';
   import type { VoiceInfo } from '../../analysis/VoiceDetector';
   import type { StereoAnalysisData } from '../../core/AudioEngine';
+  import { renderCoordinator } from '../../core/RenderCoordinator';
+  import { moduleVisibility } from '../../stores/moduleVisibility';
+
+  const RENDER_ID = 'debug-panel';
+
+  // Sync visibility with RenderCoordinator
+  $: renderCoordinator.setVisibility(RENDER_ID, $moduleVisibility.debug);
 
   let spectrum: Float32Array = new Float32Array(2048);
   let levels = { left: -100, right: -100, peak: -100 };
@@ -64,7 +71,6 @@
   const tempoHistoryLen = 0;
 
   // Animation frame for beat info updates (Svelte 5 reactivity fix)
-  let beatAnimationId: number | null = null;
   let beatFrameCount = 0;
 
   // Reactive display values
@@ -101,7 +107,6 @@
     debugInfo = detector.getDebugInfo();
 
     beatFrameCount++;
-    beatAnimationId = requestAnimationFrame(updateBeatDebugInfo);
   }
 
   // Frequency band analysis with peak hold
@@ -252,8 +257,8 @@
   }
 
   onMount(() => {
-    // Start beat debug update loop
-    beatAnimationId = requestAnimationFrame(updateBeatDebugInfo);
+    // Register with centralized render coordinator (low priority for debug)
+    renderCoordinator.register(RENDER_ID, updateBeatDebugInfo, 'low');
 
     // Fetch audio source info immediately and then every second
     fetchAudioSourceInfo();
@@ -266,9 +271,7 @@
     unsubLoudness();
     unsubStereo();
     unsubVoice();
-    if (beatAnimationId !== null) {
-      cancelAnimationFrame(beatAnimationId);
-    }
+    renderCoordinator.unregister(RENDER_ID);
     if (audioInfoInterval !== null) {
       clearInterval(audioInfoInterval);
     }

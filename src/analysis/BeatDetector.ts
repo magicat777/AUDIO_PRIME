@@ -2,24 +2,25 @@
  * BeatDetector - Real-time BPM detection and beat tracking
  *
  * Algorithm:
- * 1. Onset Detection: Spectral flux in frequency sub-bands (kick, snare, full)
+ * 1. Onset Detection: Spectral flux with adaptive thresholding per band
  * 2. Tempo Estimation: Autocorrelation of onset signal (60-180 BPM range)
  * 3. Beat Tracking: Phase-aligned beat prediction with onset correction
- * 4. Confidence: Autocorrelation peak strength and consistency
+ * 4. Confidence: Based on autocorrelation peak strength and tempo stability
  */
 
-// Onset detection parameters
-const ONSET_THRESHOLD = 0.02; // Minimum onset strength to register (very sensitive for real music)
-const ONSET_DECAY = 0.92; // Adaptive threshold decay (faster decay for responsiveness)
+// Onset detection parameters - tuned for better sensitivity
+const ONSET_THRESHOLD_BASE = 0.015; // Base threshold (lower = more sensitive)
+const ONSET_DECAY = 0.95; // Slower decay for smoother tracking
+const ONSET_ADAPT_RATE = 0.3; // How much threshold rises after detection (was 0.7, now gentler)
 
 // Tempo detection parameters
 const MIN_BPM = 60;
 const MAX_BPM = 180;
-const TEMPO_HISTORY_SIZE = 6; // Number of tempo estimates to average
+const TEMPO_HISTORY_SIZE = 8; // More history for stability
 
 // Beat tracking parameters
-const BEAT_PREDICT_WINDOW = 0.05; // 50ms window for beat prediction alignment
-const PHASE_CORRECTION_RATE = 0.1; // How quickly to adjust phase
+const BEAT_PREDICT_WINDOW = 0.08; // 80ms window for beat prediction (wider for better alignment)
+const PHASE_CORRECTION_RATE = 0.15; // How quickly to adjust phase
 
 // Spectrum configuration (must match SpectrumAnalyzer output)
 const SPECTRUM_BARS = 512;
@@ -43,6 +44,9 @@ interface OnsetBand {
   weight: number;
   prevEnergy: number;
   threshold: number;
+  energyHistory: Float32Array;  // Rolling history for mean calculation
+  historyPos: number;
+  meanEnergy: number;           // Running mean for better flux calculation
 }
 
 /**
@@ -75,6 +79,15 @@ export class BeatDetector {
   private beatCount: number = 0;
   private downbeatCounter: number = 0;
 
+  // Confidence smoothing and tempo locking
+  private smoothedConfidence: number = 0;
+  private readonly CONFIDENCE_SMOOTH_UP = 0.10;   // How fast confidence can rise
+  private readonly CONFIDENCE_SMOOTH_DOWN = 0.01; // How fast confidence can fall (very slow)
+  private stableTempoCount: number = 0;           // How many updates tempo has been stable
+  private lockedBPM: number = 0;                  // BPM when locked
+  private readonly LOCK_THRESHOLD = 0.65;         // Confidence threshold to lock tempo
+  private readonly STABLE_TEMPO_TOLERANCE = 0.05; // 5% tolerance for "stable"
+
   // Frame timing
   private lastProcessTime: number = 0;
   private frameTimeMs: number = 16.67; // Default to 60fps, will be updated
@@ -92,30 +105,42 @@ export class BeatDetector {
     // The spectrum input is already processed into 512 logarithmic bars
 
     // Initialize frequency bands for onset detection using logarithmic bar indices
+    // Energy history size for running mean calculation (~0.5 seconds at 60fps)
+    const ENERGY_HISTORY_SIZE = 30;
+
     this.bands = [
       {
         name: 'kick',
-        minBar: freqToBar(60),   // ~bar 50
-        maxBar: freqToBar(150),  // ~bar 90
-        weight: 2.0, // Emphasize kick strongly for beat detection
+        minBar: freqToBar(40),   // Lower for sub-bass kick
+        maxBar: freqToBar(120),  // Upper kick range
+        weight: 2.5, // Emphasize kick strongly for beat detection
         prevEnergy: 0,
-        threshold: ONSET_THRESHOLD,
+        threshold: ONSET_THRESHOLD_BASE,
+        energyHistory: new Float32Array(ENERGY_HISTORY_SIZE),
+        historyPos: 0,
+        meanEnergy: 0,
       },
       {
         name: 'snare',
-        minBar: freqToBar(150),  // ~bar 90
-        maxBar: freqToBar(300),  // ~bar 120
-        weight: 1.2,
+        minBar: freqToBar(120),  // Above kick
+        maxBar: freqToBar(400),  // Snare body + crack
+        weight: 1.5,
         prevEnergy: 0,
-        threshold: ONSET_THRESHOLD,
+        threshold: ONSET_THRESHOLD_BASE,
+        energyHistory: new Float32Array(ENERGY_HISTORY_SIZE),
+        historyPos: 0,
+        meanEnergy: 0,
       },
       {
         name: 'hihat',
-        minBar: freqToBar(3000), // ~bar 280
-        maxBar: freqToBar(10000), // ~bar 380
-        weight: 0.6, // Less weight for high frequencies
+        minBar: freqToBar(4000), // High frequencies
+        maxBar: freqToBar(12000),
+        weight: 0.8, // Less weight for high frequencies
         prevEnergy: 0,
-        threshold: ONSET_THRESHOLD,
+        threshold: ONSET_THRESHOLD_BASE,
+        energyHistory: new Float32Array(ENERGY_HISTORY_SIZE),
+        historyPos: 0,
+        meanEnergy: 0,
       },
     ];
 
@@ -138,41 +163,71 @@ export class BeatDetector {
     }
     this.lastProcessTime = now;
 
-    // 1. Onset Detection - use combination of absolute energy and flux
+    // 1. Onset Detection - spectral flux with running mean comparison
     let totalOnset = 0;
     let kickOnset = 0;
+    let totalEnergy = 0;
+    let totalFlux = 0;  // Raw flux for autocorrelation (unthresholded)
 
     for (const band of this.bands) {
       const energy = this.calculateBandEnergy(spectrum, band.minBar, band.maxBar);
+      totalEnergy += energy;
+
+      // Update energy history and calculate running mean
+      band.energyHistory[band.historyPos] = energy;
+      band.historyPos = (band.historyPos + 1) % band.energyHistory.length;
+
+      // Calculate mean energy over history
+      let sum = 0;
+      for (let i = 0; i < band.energyHistory.length; i++) {
+        sum += band.energyHistory[i];
+      }
+      band.meanEnergy = sum / band.energyHistory.length;
+
+      // Spectral flux: how much energy increased compared to previous frame
       const flux = Math.max(0, energy - band.prevEnergy);
 
-      // Use both absolute energy and flux for onset detection
-      // This helps detect beats even when energy is sustained
-      const absoluteContribution = energy > band.threshold * 2 ? (energy - band.threshold) * 0.5 : 0;
-      const fluxContribution = flux > band.threshold ? (flux - band.threshold) : 0;
-      const combinedOnset = (absoluteContribution + fluxContribution) * band.weight;
+      // Accumulate weighted flux for autocorrelation (always, not just above threshold)
+      totalFlux += flux * band.weight;
 
-      if (combinedOnset > 0) {
-        totalOnset += combinedOnset;
+      // Deviation from mean: detects transients above average level
+      const deviation = Math.max(0, energy - band.meanEnergy * 1.3);
+
+      // Combined onset: weighted sum of flux and deviation
+      const rawOnset = flux * 0.7 + deviation * 0.3;
+
+      // Apply adaptive threshold for beat triggering
+      if (rawOnset > band.threshold) {
+        const onsetValue = (rawOnset - band.threshold) * band.weight;
+        totalOnset += onsetValue;
+
         if (band.name === 'kick') {
-          kickOnset = combinedOnset;
+          kickOnset = onsetValue;
         }
-        // Raise threshold after onset (adaptive)
-        band.threshold = Math.max(ONSET_THRESHOLD, Math.max(energy, flux) * 0.7);
+
+        // Gently raise threshold after detection
+        band.threshold = Math.max(
+          ONSET_THRESHOLD_BASE,
+          band.threshold + rawOnset * ONSET_ADAPT_RATE
+        );
       } else {
-        // Decay threshold
+        // Decay threshold back towards base
         band.threshold *= ONSET_DECAY;
-        band.threshold = Math.max(ONSET_THRESHOLD, band.threshold);
+        band.threshold = Math.max(ONSET_THRESHOLD_BASE, band.threshold);
       }
 
       band.prevEnergy = energy;
     }
 
-    // Normalize onset strength (scale up for sensitivity)
+    // Normalize values
     const onsetStrength = Math.min(1, totalOnset * 2);
-
-    // Calculate total energy for silence detection
-    const totalEnergy = this.bands.reduce((sum, band) => sum + band.prevEnergy, 0);
+    // For autocorrelation, use the raw flux signal (not thresholded)
+    // Scale up for better sensitivity
+    const fluxSignal = Math.min(1, totalFlux * 5);
+    // Display strength: show overall signal activity
+    // Higher weight on energy for more responsive visual feedback
+    const avgEnergy = totalEnergy / this.bands.length;
+    const displayStrength = Math.min(1, fluxSignal * 0.4 + avgEnergy * 1.2);
 
     // Silence detection - reset BPM if no sound for 3 seconds
     if (totalEnergy < this.SILENCE_THRESHOLD) {
@@ -198,8 +253,9 @@ export class BeatDetector {
     // Debug counter for internal tracking
     this.debugCounter++;
 
-    // Store in history
-    this.onsetHistory[this.onsetWritePos] = onsetStrength;
+    // Store flux signal in history for autocorrelation
+    // Using raw flux (not thresholded) gives better tempo detection
+    this.onsetHistory[this.onsetWritePos] = fluxSignal;
     this.onsetWritePos = (this.onsetWritePos + 1) % this.onsetHistorySize;
 
     // 2. Tempo Estimation - periodic autocorrelation update
@@ -216,7 +272,7 @@ export class BeatDetector {
       confidence: this.tempoConfidence,
       beat: beatResult.beat,
       beatPhase: this.beatPhase,
-      beatStrength: onsetStrength,
+      beatStrength: displayStrength,  // Show actual signal strength for visual feedback
       downbeat: beatResult.downbeat,
       beatCount: this.beatCount,
     };
@@ -311,28 +367,93 @@ export class BeatDetector {
       // Update beat interval
       this.beatInterval = 60000 / this.currentBPM;
 
-      // Update confidence based on tempo stability (how consistent recent estimates are)
+      // Update confidence based on multiple factors
+      // 1. Autocorrelation strength (how periodic the signal is)
+      // 2. Tempo stability (how consistent estimates are)
+      // 3. History depth (more samples = more reliable)
+
+      // Correlation score: normalized and scaled
+      // bestCorr is typically 0.01-0.1 for good beats, scale up generously
+      const correlationScore = Math.min(1, bestCorr * 15);
+
+      let rawConfidence = 0;
+
       if (this.tempoHistory.length >= 2) {
         const sorted = [...this.tempoHistory].sort((a, b) => a - b);
         const median = sorted[Math.floor(sorted.length / 2)];
 
-        // Calculate how close estimates are to the median (stability measure)
+        // Calculate stability using IQR (interquartile range) - more robust to outliers
+        // Only consider values within reasonable range of median
+        let stableCount = 0;
         let stabilitySum = 0;
         for (const bpm of this.tempoHistory) {
           const deviation = Math.abs(bpm - median) / median;
-          stabilitySum += Math.max(0, 1 - deviation * 5); // 20% deviation = 0 contribution
+          if (deviation < 0.15) {
+            // Within 15% of median - count as stable
+            stableCount++;
+            stabilitySum += 1 - deviation * 3; // Small penalty for deviation
+          }
+          // Outliers (>15% deviation) are ignored, not penalized
         }
-        const stabilityScore = stabilitySum / this.tempoHistory.length;
+        // Stability is based on how many estimates are stable
+        const stabilityScore = this.tempoHistory.length > 0
+          ? (stableCount / this.tempoHistory.length) * (stabilitySum / Math.max(1, stableCount))
+          : 0;
 
-        // Combine stability with history length and correlation
-        const historyFactor = Math.min(1, this.tempoHistory.length / 4); // Full credit at 4+ estimates
-        const correlationBonus = Math.min(0.3, bestCorr * 3); // Up to 30% bonus from correlation
+        // History factor: ramp up quickly (full credit at 4 entries)
+        const historyFactor = Math.min(1, this.tempoHistory.length / 4);
 
-        this.tempoConfidence = Math.min(1, stabilityScore * historyFactor + correlationBonus);
+        // Combined confidence - generous weighting:
+        // - 35% from correlation (actual beat periodicity)
+        // - 40% from stability (tempo consistency)
+        // - 25% from history depth (data reliability)
+        rawConfidence = Math.min(1,
+          correlationScore * 0.35 +
+          stabilityScore * historyFactor * 0.40 +
+          historyFactor * 0.25
+        );
       } else {
-        // Low confidence until we have enough history
-        this.tempoConfidence = Math.min(0.2, bestCorr * 2);
+        // Early confidence based primarily on correlation
+        rawConfidence = Math.min(0.6, correlationScore * 0.6);
       }
+
+      // Track tempo stability for locking
+      const tempoChange = this.lockedBPM > 0
+        ? Math.abs(this.currentBPM - this.lockedBPM) / this.lockedBPM
+        : 0;
+
+      if (tempoChange < this.STABLE_TEMPO_TOLERANCE) {
+        this.stableTempoCount++;
+      } else {
+        this.stableTempoCount = Math.max(0, this.stableTempoCount - 2); // Penalize instability
+        if (this.smoothedConfidence > this.LOCK_THRESHOLD) {
+          this.lockedBPM = this.currentBPM; // Update lock to new stable tempo
+        }
+      }
+
+      // Lock tempo once confidence is high enough
+      if (this.smoothedConfidence >= this.LOCK_THRESHOLD && this.lockedBPM === 0) {
+        this.lockedBPM = this.currentBPM;
+      }
+
+      // Stability bonus: reward sustained stable tempo
+      // Max bonus of 0.15 after 20 stable updates (~10 seconds)
+      const stabilityBonus = Math.min(0.15, this.stableTempoCount * 0.0075);
+
+      // Apply asymmetric smoothing: confidence rises faster than it falls
+      const targetConfidence = Math.min(1, rawConfidence + stabilityBonus);
+
+      if (targetConfidence > this.smoothedConfidence) {
+        this.smoothedConfidence += (targetConfidence - this.smoothedConfidence) * this.CONFIDENCE_SMOOTH_UP;
+      } else {
+        // Even slower decay when tempo is locked and stable
+        const decayRate = (this.lockedBPM > 0 && tempoChange < this.STABLE_TEMPO_TOLERANCE)
+          ? this.CONFIDENCE_SMOOTH_DOWN * 0.5  // Half speed when locked
+          : this.CONFIDENCE_SMOOTH_DOWN;
+        this.smoothedConfidence += (targetConfidence - this.smoothedConfidence) * decayRate;
+      }
+
+      this.tempoConfidence = this.smoothedConfidence;
     }
   }
 
@@ -443,6 +564,9 @@ export class BeatDetector {
     this.tempoHistory = [];
     this.currentBPM = 120;
     this.tempoConfidence = 0;
+    this.smoothedConfidence = 0;
+    this.stableTempoCount = 0;
+    this.lockedBPM = 0;
     this.beatPhase = 0;
     this.lastBeatTime = 0;
     this.beatCount = 0;
@@ -451,7 +575,10 @@ export class BeatDetector {
 
     for (const band of this.bands) {
       band.prevEnergy = 0;
-      band.threshold = ONSET_THRESHOLD;
+      band.threshold = ONSET_THRESHOLD_BASE;
+      band.energyHistory.fill(0);
+      band.historyPos = 0;
+      band.meanEnergy = 0;
     }
   }
 

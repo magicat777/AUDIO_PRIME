@@ -1,11 +1,43 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import interact from 'interactjs';
-  import { gridLayout, GRID_CONFIG, type PanelId } from '../../stores/gridLayout';
+  import { gridLayout, scaledPanelLayouts, scaleState, GRID_CONFIG, type PanelId } from '../../stores/gridLayout';
+  import { moduleVisibility, type ModuleVisibility } from '../../stores/moduleVisibility';
 
   // Props
   export let panelId: PanelId;
   export let title: string = '';
+
+  // Map panel IDs to module visibility keys
+  const panelToModuleMap: Record<string, keyof ModuleVisibility> = {
+    spectrum: 'spectrum',
+    bassDetail: 'bassDetail',
+    debug: 'debug',
+    vuMeters: 'vuMeters',
+    lufsMetering: 'lufsMetering',
+    bpmTempo: 'bpmTempo',
+    voiceDetection: 'voiceDetection',
+    stereoCorrelation: 'stereoCorrelation',
+    goniometer: 'goniometer',
+    oscilloscope: 'oscilloscope',
+    frequencyBands: 'frequencyBands',
+    spotify: 'spotify',
+    // 3D visualizations
+    cylindricalBars: 'cylindricalBars',
+    waterfall3d: 'waterfall3d',
+    frequencySphere: 'frequencySphere',
+    stereoSpace3d: 'stereoSpace3d',
+    tunnel: 'tunnel',
+    terrain: 'terrain',
+  };
+
+  function handleClosePanel(e: MouseEvent) {
+    e.stopPropagation(); // Prevent drag from starting
+    const moduleKey = panelToModuleMap[panelId];
+    if (moduleKey) {
+      moduleVisibility.toggle(moduleKey);
+    }
+  }
 
   // Local state
   let panelElement: HTMLDivElement;
@@ -13,43 +45,36 @@
   let isDragging = false;
   let isResizing = false;
 
-  // Reactive panel data from store
-  $: panel = $gridLayout.panels[panelId];
+  // Reactive panel data from store (use scaled layouts for rendering)
+  $: panel = $scaledPanelLayouts[panelId];
+  $: rawPanel = $gridLayout.panels[panelId]; // Original unscaled panel for lock state
   $: isActive = $gridLayout.activePanel === panelId;
   $: snapEnabled = $gridLayout.snapEnabled;
+  $: scale = $scaleState;
 
-  // Calculate pixel position and size from grid coordinates
+  // Calculate pixel position and size from scaled grid coordinates
   $: pixelPos = panel ? gridLayout.gridToPixels(panel.x, panel.y) : { x: 0, y: 0 };
   $: pixelSize = panel ? gridLayout.sizeToPixels(panel.width, panel.height) : { width: 200, height: 150 };
 
-  // Style string for positioning
-  $: panelStyle = panel ? `
+  // Style string for positioning (use rawPanel for zIndex as it's not affected by scaling)
+  $: panelStyle = panel && rawPanel ? `
     left: ${pixelPos.x}px;
     top: ${pixelPos.y}px;
     width: ${pixelSize.width}px;
     height: ${pixelSize.height}px;
-    z-index: ${panel.zIndex + (isActive ? 100 : 0)};
+    z-index: ${rawPanel.zIndex + (isActive ? 100 : 0)};
   ` : '';
 
   onMount(() => {
     if (!panelElement || !panel) return;
 
     // Initialize interact.js
+    // Note: We don't use interact.js snap modifiers because they don't support
+    // dynamic cell sizes needed for scaling. Instead, we snap manually in end handlers.
     interactable = interact(panelElement)
       .draggable({
         inertia: false,
-        modifiers: snapEnabled ? [
-          interact.modifiers.snap({
-            targets: [
-              interact.snappers.grid({
-                x: GRID_CONFIG.cellSize,
-                y: GRID_CONFIG.cellSize,
-              }),
-            ],
-            range: GRID_CONFIG.snapThreshold,
-            relativePoints: [{ x: 0, y: 0 }],
-          }),
-        ] : [],
+        modifiers: [], // Manual snap in end handler
         autoScroll: false,
         // Use the drag handle, not the entire panel
         allowFrom: '.drag-handle',
@@ -62,7 +87,7 @@
             panelElement.style.willChange = 'transform';
           },
           move: (event) => {
-            if (panel?.locked) return;
+            if (rawPanel?.locked) return;
 
             // During drag, use CSS transform for performance (GPU layer)
             const target = event.target as HTMLElement;
@@ -78,47 +103,41 @@
             gridLayout.setActivePanel(null);
             panelElement.style.willChange = '';
 
-            // Calculate final grid position
+            // Calculate final pixel position
             const target = event.target as HTMLElement;
-            const x = parseFloat(target.getAttribute('data-x') || '0');
-            const y = parseFloat(target.getAttribute('data-y') || '0');
+            const dragX = parseFloat(target.getAttribute('data-x') || '0');
+            const dragY = parseFloat(target.getAttribute('data-y') || '0');
 
-            // Convert to grid coordinates and update store
-            const newGridPos = gridLayout.pixelsToGrid(
-              pixelPos.x + x,
-              pixelPos.y + y,
-              snapEnabled
-            );
+            // Final pixel position after drag
+            const finalPixelX = pixelPos.x + dragX;
+            const finalPixelY = pixelPos.y + dragY;
+
+            // Use fixed grid cell size (positions are not scaled)
+            const cellSize = GRID_CONFIG.cellSize;
+
+            // Convert to grid coordinates and snap if enabled
+            let gridX = (finalPixelX - GRID_CONFIG.padding) / cellSize;
+            let gridY = (finalPixelY - GRID_CONFIG.padding) / cellSize;
+
+            if (snapEnabled) {
+              gridX = Math.round(gridX);
+              gridY = Math.round(gridY);
+            }
 
             // Reset transform and update actual position
             target.style.transform = '';
             target.removeAttribute('data-x');
             target.removeAttribute('data-y');
 
-            // Update store (this triggers reactive update)
-            gridLayout.updatePosition(panelId, Math.max(0, newGridPos.x), Math.max(0, newGridPos.y));
+            // Update store with grid coordinates
+            gridLayout.updatePosition(panelId, Math.max(0, Math.round(gridX)), Math.max(0, Math.round(gridY)));
           },
         },
       })
       .resizable({
         edges: { left: false, right: true, bottom: true, top: false },
-        modifiers: snapEnabled ? [
-          interact.modifiers.snap({
-            targets: [
-              interact.snappers.grid({
-                x: GRID_CONFIG.cellSize,
-                y: GRID_CONFIG.cellSize,
-              }),
-            ],
-            range: GRID_CONFIG.snapThreshold,
-          }),
-          interact.modifiers.restrictSize({
-            min: {
-              width: GRID_CONFIG.minPanelWidth,
-              height: GRID_CONFIG.minPanelHeight,
-            },
-          }),
-        ] : [
+        modifiers: [
+          // Only restrict minimum size; snap is handled manually in end handler
           interact.modifiers.restrictSize({
             min: {
               width: GRID_CONFIG.minPanelWidth,
@@ -134,7 +153,7 @@
             panelElement.style.willChange = 'width, height';
           },
           move: (event) => {
-            if (panel?.locked) return;
+            if (rawPanel?.locked) return;
 
             // During resize, update dimensions directly (still performant)
             const target = event.target as HTMLElement;
@@ -146,11 +165,38 @@
             gridLayout.setActivePanel(null);
             panelElement.style.willChange = '';
 
-            // Convert to grid cells and update store
-            const newWidth = Math.round((event.rect.width + GRID_CONFIG.gap) / GRID_CONFIG.cellSize);
-            const newHeight = Math.round((event.rect.height + GRID_CONFIG.gap) / GRID_CONFIG.cellSize);
+            const cellSize = GRID_CONFIG.cellSize;
+            const padding = GRID_CONFIG.padding;
 
-            gridLayout.updateSize(panelId, newWidth, newHeight);
+            // Get the panel's current grid position
+            const panelGridX = panel?.x ?? 0;
+            const panelGridY = panel?.y ?? 0;
+
+            // Calculate new size directly from pixel dimensions
+            // Panel width in pixels = cells * cellSize (no gap subtraction anymore)
+            // So: cells = pixelWidth / cellSize
+            let newWidthCells = event.rect.width / cellSize;
+            let newHeightCells = event.rect.height / cellSize;
+
+            if (snapEnabled) {
+              // Snap to full grid cells
+              newWidthCells = Math.round(newWidthCells);
+              newHeightCells = Math.round(newHeightCells);
+            }
+
+            // Ensure minimum size
+            newWidthCells = Math.max(1, Math.round(newWidthCells));
+            newHeightCells = Math.max(1, Math.round(newHeightCells));
+
+            // Convert displayed size back to reference size
+            const { scaleX, scaleY } = scale;
+            const uniformScale = Math.min(scaleX, scaleY);
+
+            const refWidth = uniformScale > 0 ? Math.round(newWidthCells / uniformScale) : newWidthCells;
+            const refHeight = uniformScale > 0 ? Math.round(newHeightCells / uniformScale) : newHeightCells;
+
+            // Update store with reference grid cell dimensions
+            gridLayout.updateSize(panelId, Math.max(1, refWidth), Math.max(1, refHeight));
           },
         },
       });
@@ -181,7 +227,7 @@
     class:is-dragging={isDragging}
     class:is-resizing={isResizing}
     class:is-active={isActive}
-    class:is-locked={panel.locked}
+    class:is-locked={rawPanel?.locked}
     style={panelStyle}
     role="region"
     aria-label={title || panelId}
@@ -190,12 +236,15 @@
     <!-- Drag handle (title bar) -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="drag-handle" on:dblclick={handleDoubleClick}>
-      {#if panel.locked}
+      {#if rawPanel?.locked}
         <span class="lock-icon" title="Locked - double-click to unlock">🔒</span>
       {/if}
       {#if title}
         <span class="panel-title">{title}</span>
       {/if}
+      <button class="close-led" on:click={handleClosePanel} title="Close panel">
+        <span class="led-light"></span>
+      </button>
       <div class="drag-indicator">⋮⋮</div>
     </div>
 
@@ -205,7 +254,7 @@
     </div>
 
     <!-- Resize handle (bottom-right corner) -->
-    {#if !panel.locked}
+    {#if !rawPanel?.locked}
       <div class="resize-handle" aria-hidden="true">
         <svg viewBox="0 0 10 10" class="resize-icon">
           <path d="M8,0 L10,0 L10,10 L0,10 L0,8 L8,8 Z" fill="currentColor" opacity="0.3" />
@@ -280,8 +329,47 @@
     text-transform: uppercase;
   }
 
-  .drag-indicator {
+  .close-led {
     margin-left: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    border-radius: 50%;
+  }
+
+  .led-light {
+    display: block;
+    width: 8px;
+    height: 8px;
+    background: rgba(239, 68, 68, 0.8);
+    border-radius: 50%;
+    box-shadow: 0 0 4px rgba(239, 68, 68, 0.6);
+    transition: all 0.15s ease;
+    animation: led-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes led-pulse {
+    0%, 100% {
+      box-shadow: 0 0 4px rgba(239, 68, 68, 0.6);
+    }
+    50% {
+      box-shadow: 0 0 8px rgba(239, 68, 68, 0.9);
+    }
+  }
+
+  .close-led:hover .led-light {
+    background: rgba(239, 68, 68, 1);
+    box-shadow: 0 0 10px rgba(239, 68, 68, 1);
+    animation: none;
+  }
+
+  .drag-indicator {
     font-size: 0.7rem;
     color: var(--text-muted);
     opacity: 0.4;

@@ -2,11 +2,17 @@
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import { audioEngine } from '../../core/AudioEngine';
+  import { renderCoordinator } from '../../core/RenderCoordinator';
+  import { moduleVisibility } from '../../stores/moduleVisibility';
+
+  const RENDER_ID = 'oscilloscope-panel';
 
   let canvas: HTMLCanvasElement;
   let container: HTMLDivElement;
   let ctx: CanvasRenderingContext2D | null = null;
-  let animationId: number | null = null;
+
+  // Sync visibility with RenderCoordinator
+  $: renderCoordinator.setVisibility(RENDER_ID, $moduleVisibility.oscilloscope);
 
   // Canvas dimensions (responsive)
   let canvasWidth = 400;
@@ -55,13 +61,12 @@
     });
     resizeObserver.observe(container);
 
-    animationId = requestAnimationFrame(render);
+    // Register with centralized render coordinator
+    renderCoordinator.register(RENDER_ID, render, 'normal');
   });
 
   onDestroy(() => {
-    if (animationId !== null) {
-      cancelAnimationFrame(animationId);
-    }
+    renderCoordinator.unregister(RENDER_ID);
     if (resizeObserver) {
       resizeObserver.disconnect();
     }
@@ -80,7 +85,6 @@
 
   function render() {
     if (!ctx) {
-      animationId = requestAnimationFrame(render);
       return;
     }
 
@@ -225,8 +229,6 @@
       ctx.fillStyle = 'rgba(74, 220, 150, 0.5)';
       ctx.fillText(`x${autoGain.toFixed(1)}`, width - 2, 2);
     }
-
-    animationId = requestAnimationFrame(render);
   }
 </script>
 

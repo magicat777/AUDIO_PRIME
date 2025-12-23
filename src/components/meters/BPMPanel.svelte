@@ -3,6 +3,13 @@
   import { get } from 'svelte/store';
   import { audioEngine } from '../../core/AudioEngine';
   import type { BeatInfo } from '../../analysis/BeatDetector';
+  import { renderCoordinator } from '../../core/RenderCoordinator';
+  import { moduleVisibility } from '../../stores/moduleVisibility';
+
+  const RENDER_ID = 'bpm-panel';
+
+  // Sync visibility with RenderCoordinator
+  $: renderCoordinator.setVisibility(RENDER_ID, $moduleVisibility.bpmTempo);
 
   // Beat info state
   let beatInfo: BeatInfo = {
@@ -16,7 +23,6 @@
   };
 
   // Animation frame tracking
-  let animationId: number | null = null;
   let frameCount = 0;
 
   // Reactive triggers for Svelte 5
@@ -31,7 +37,7 @@
   let flashTimeout: number | null = null;
   let lastBeatCount = 0;
 
-  // Update loop using requestAnimationFrame
+  // Update loop using RenderCoordinator
   function updateBeatInfo() {
     const info = get(audioEngine.beatInfo);
     beatInfo = info;
@@ -46,8 +52,6 @@
       }, 100);
       lastBeatCount = info.beatCount;
     }
-
-    animationId = requestAnimationFrame(updateBeatInfo);
   }
 
   // Tap tempo
@@ -73,13 +77,12 @@
   }
 
   onMount(() => {
-    animationId = requestAnimationFrame(updateBeatInfo);
+    // Register with centralized render coordinator (low priority)
+    renderCoordinator.register(RENDER_ID, updateBeatInfo, 'low');
   });
 
   onDestroy(() => {
-    if (animationId !== null) {
-      cancelAnimationFrame(animationId);
-    }
+    renderCoordinator.unregister(RENDER_ID);
     if (flashTimeout) clearTimeout(flashTimeout);
   });
 </script>
