@@ -98,11 +98,35 @@
     return SPECTRUM_MIN_FREQ * Math.pow(SPECTRUM_MAX_FREQ / SPECTRUM_MIN_FREQ, t);
   }
 
+  // PERFORMANCE: Pre-allocate band info objects to avoid GC pressure
+  let bandsHorizontal: BandInfo[] = BAND_RANGES_HORIZONTAL.map(b => ({
+    name: b.name, label: b.label, range: `${b.min}-${b.max}Hz`,
+    peak: 0, avg: 0, peakHold: 0, peakHoldTime: 0
+  }));
+  let bandsVertical: BandInfo[] = BAND_RANGES_VERTICAL.map(b => ({
+    name: b.name, label: b.label, range: `${b.min}-${b.max}Hz`,
+    peak: 0, avg: 0, peakHold: 0, peakHoldTime: 0
+  }));
+
+  // PERFORMANCE: Pre-calculate bar indices for each band (avoids log calculations every frame)
+  const barIndicesHorizontal = BAND_RANGES_HORIZONTAL.map(b => ({
+    start: freqToBar(b.min),
+    end: Math.min(freqToBar(b.max), TOTAL_BARS - 1)
+  }));
+  const barIndicesVertical = BAND_RANGES_VERTICAL.map(b => ({
+    start: freqToBar(b.min),
+    end: Math.min(freqToBar(b.max), TOTAL_BARS - 1)
+  }));
+
   function analyzeBands(spec: Float32Array, now: number): BandInfo[] {
-    const bandRanges = getCurrentBandRanges();
-    return bandRanges.map((band, idx) => {
-      const startBar = freqToBar(band.min);
-      const endBar = Math.min(freqToBar(band.max), spec.length - 1);
+    const bandRanges = displayMode === 'horizontal' ? BAND_RANGES_HORIZONTAL : BAND_RANGES_VERTICAL;
+    const barIndices = displayMode === 'horizontal' ? barIndicesHorizontal : barIndicesVertical;
+    const targetBands = displayMode === 'horizontal' ? bandsHorizontal : bandsVertical;
+
+    // PERFORMANCE: Update existing objects instead of creating new ones
+    for (let idx = 0; idx < bandRanges.length; idx++) {
+      const { start: startBar, end: endBar } = barIndices[idx];
+      const band = targetBands[idx];
 
       let peak = 0;
       let sum = 0;
@@ -110,7 +134,7 @@
 
       for (let i = startBar; i <= endBar; i++) {
         const val = spec[i] || 0;
-        peak = Math.max(peak, val);
+        if (val > peak) peak = val;
         sum += val;
         count++;
       }
@@ -125,23 +149,22 @@
         peakHolds[idx] = Math.max(avgPercent, peakHolds[idx] - PEAK_DECAY_RATE * peakHolds[idx]);
       }
 
-      return {
-        name: band.name,
-        label: band.label,
-        range: `${band.min}-${band.max}Hz`,
-        peak: peak * 100,
-        avg: avgPercent,
-        peakHold: peakHolds[idx],
-        peakHoldTime: peakHoldTimes[idx],
-      };
-    });
+      // PERFORMANCE: Mutate existing object instead of creating new one
+      band.peak = peak * 100;
+      band.avg = avgPercent;
+      band.peakHold = peakHolds[idx];
+      band.peakHoldTime = peakHoldTimes[idx];
+    }
+
+    return targetBands;
   }
 
   function findDominantFreq(spec: Float32Array): number {
     let maxVal = 0;
     let maxBar = 0;
 
-    for (let i = 1; i < spec.length; i++) {
+    // PERFORMANCE: Use stride of 4 to reduce iterations (512 -> 128)
+    for (let i = 1; i < spec.length; i += 4) {
       if (spec[i] > maxVal) {
         maxVal = spec[i];
         maxBar = i;
@@ -156,7 +179,8 @@
     const now = performance.now();
     bands = analyzeBands(data, now);
     dominantFreq = findDominantFreq(data);
-    signalPresent = data.some(v => v > 0.05);
+    // PERFORMANCE: Check just a few representative bins instead of .some() over 512
+    signalPresent = data[50] > 0.05 || data[150] > 0.05 || data[300] > 0.05;
   });
 
   onDestroy(() => {

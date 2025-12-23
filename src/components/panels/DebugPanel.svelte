@@ -162,10 +162,21 @@
     return SPECTRUM_MIN_FREQ * Math.pow(SPECTRUM_MAX_FREQ / SPECTRUM_MIN_FREQ, t);
   }
 
+  // PERFORMANCE: Pre-allocate band info objects and bar indices
+  const preallocatedBands: BandInfo[] = BAND_RANGES.map(b => ({
+    name: b.name, range: `${b.min}-${b.max}Hz`,
+    peak: 0, avg: 0, peakHold: 0, peakHoldTime: 0
+  }));
+  const barIndices = BAND_RANGES.map(b => ({
+    start: freqToBar(b.min),
+    end: Math.min(freqToBar(b.max), TOTAL_BARS - 1)
+  }));
+
   function analyzeBands(spec: Float32Array, now: number): BandInfo[] {
-    return BAND_RANGES.map((band, idx) => {
-      const startBar = freqToBar(band.min);
-      const endBar = Math.min(freqToBar(band.max), spec.length - 1);
+    // PERFORMANCE: Update existing objects instead of creating new ones
+    for (let idx = 0; idx < BAND_RANGES.length; idx++) {
+      const { start: startBar, end: endBar } = barIndices[idx];
+      const band = preallocatedBands[idx];
 
       let peak = 0;
       let sum = 0;
@@ -173,40 +184,37 @@
 
       for (let i = startBar; i <= endBar; i++) {
         const val = spec[i] || 0;
-        peak = Math.max(peak, val);
+        if (val > peak) peak = val;
         sum += val;
         count++;
       }
 
-      // Convert 0-1 normalized to percentage for display
       const avgPercent = count > 0 ? (sum / count) * 100 : 0;
 
       // Update peak hold with decay
       if (avgPercent > peakHolds[idx]) {
-        // New peak - update immediately
         peakHolds[idx] = avgPercent;
         peakHoldTimes[idx] = now;
       } else if (now - peakHoldTimes[idx] > PEAK_HOLD_TIME_MS) {
-        // Hold time expired - decay
         peakHolds[idx] = Math.max(avgPercent, peakHolds[idx] - PEAK_DECAY_RATE * peakHolds[idx]);
       }
 
-      return {
-        name: band.name,
-        range: `${band.min}-${band.max}Hz`,
-        peak: peak * 100,
-        avg: avgPercent,
-        peakHold: peakHolds[idx],
-        peakHoldTime: peakHoldTimes[idx],
-      };
-    });
+      // PERFORMANCE: Mutate existing object
+      band.peak = peak * 100;
+      band.avg = avgPercent;
+      band.peakHold = peakHolds[idx];
+      band.peakHoldTime = peakHoldTimes[idx];
+    }
+
+    return preallocatedBands;
   }
 
   function findDominantFreq(spec: Float32Array): number {
     let maxVal = 0;
     let maxBar = 0;
 
-    for (let i = 1; i < spec.length; i++) {
+    // PERFORMANCE: Use stride of 4 to reduce iterations
+    for (let i = 1; i < spec.length; i += 4) {
       if (spec[i] > maxVal) {
         maxVal = spec[i];
         maxBar = i;
@@ -225,8 +233,8 @@
 
     bands = analyzeBands(data, now);
     dominantFreq = findDominantFreq(data);
-    // Signal present if any bar value exceeds 0.05 (5%)
-    signalPresent = data.some(v => v > 0.05);
+    // PERFORMANCE: Check representative bins instead of .some() over 512
+    signalPresent = data[50] > 0.05 || data[150] > 0.05 || data[300] > 0.05;
   });
 
   const unsubLevels = audioEngine.levels.subscribe((data) => {

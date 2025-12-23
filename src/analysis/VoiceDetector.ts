@@ -68,15 +68,24 @@ export class VoiceDetector {
   private readonly formantStartBar: number;
   private readonly formantEndBar: number;
 
+  // PERFORMANCE: Use ring buffers instead of push/shift arrays
   // Pitch history for vibrato/stability analysis
   // At 60fps, 30 frames = 500ms of history
-  private pitchHistory: number[] = [];
+  private pitchHistory: Float32Array;
+  private pitchHistoryPos: number = 0;
+  private pitchHistoryCount: number = 0;
   private readonly PITCH_HISTORY_LENGTH = 30;
   private readonly SAMPLE_RATE = 60; // Approximate frame rate
 
   // Amplitude history for tremolo detection
-  private amplitudeHistory: number[] = [];
+  private amplitudeHistory: Float32Array;
+  private amplitudeHistoryPos: number = 0;
+  private amplitudeHistoryCount: number = 0;
   private readonly AMPLITUDE_HISTORY_LENGTH = 30;
+
+  // PERFORMANCE: Pre-allocated working arrays to avoid allocations in hot path
+  private centDeviations: Float32Array;
+  private validPitchBuffer: Float32Array;
 
   // Vibrato detection parameters
   private readonly VIBRATO_MIN_RATE = 4.5;  // Hz - typical singing vibrato starts around 5 Hz
@@ -89,6 +98,12 @@ export class VoiceDetector {
     this.voiceEndBar = freqToBar(VOICE_MAX_FREQ);
     this.formantStartBar = freqToBar(FORMANT_MIN_FREQ);
     this.formantEndBar = freqToBar(FORMANT_MAX_FREQ);
+
+    // PERFORMANCE: Pre-allocate ring buffers and working arrays
+    this.pitchHistory = new Float32Array(this.PITCH_HISTORY_LENGTH);
+    this.amplitudeHistory = new Float32Array(this.AMPLITUDE_HISTORY_LENGTH);
+    this.centDeviations = new Float32Array(this.PITCH_HISTORY_LENGTH);
+    this.validPitchBuffer = new Float32Array(this.PITCH_HISTORY_LENGTH);
   }
 
   /**
@@ -191,17 +206,19 @@ export class VoiceDetector {
     // Estimate pitch (fundamental frequency) - do this early for history tracking
     const pitch = this.estimatePitch(spectrum);
 
-    // Track pitch and amplitude history for modulation analysis
-    this.pitchHistory.push(pitch);
-    if (this.pitchHistory.length > this.PITCH_HISTORY_LENGTH) {
-      this.pitchHistory.shift();
+    // PERFORMANCE: Use ring buffer instead of push/shift (O(1) instead of O(n))
+    this.pitchHistory[this.pitchHistoryPos] = pitch;
+    this.pitchHistoryPos = (this.pitchHistoryPos + 1) % this.PITCH_HISTORY_LENGTH;
+    if (this.pitchHistoryCount < this.PITCH_HISTORY_LENGTH) {
+      this.pitchHistoryCount++;
     }
 
-    // Track voice-band amplitude for tremolo detection
+    // Track voice-band amplitude for tremolo detection using ring buffer
     const voiceBandAmplitude = Math.sqrt(voiceEnergy / (this.voiceEndBar - this.voiceStartBar + 1));
-    this.amplitudeHistory.push(voiceBandAmplitude);
-    if (this.amplitudeHistory.length > this.AMPLITUDE_HISTORY_LENGTH) {
-      this.amplitudeHistory.shift();
+    this.amplitudeHistory[this.amplitudeHistoryPos] = voiceBandAmplitude;
+    this.amplitudeHistoryPos = (this.amplitudeHistoryPos + 1) % this.AMPLITUDE_HISTORY_LENGTH;
+    if (this.amplitudeHistoryCount < this.AMPLITUDE_HISTORY_LENGTH) {
+      this.amplitudeHistoryCount++;
     }
 
     // Analyze vibrato and pitch stability
@@ -438,46 +455,58 @@ export class VoiceDetector {
   /**
    * Analyze pitch history for vibrato detection
    * Vibrato is characterized by periodic frequency modulation at 5-8 Hz
+   * PERFORMANCE: Uses ring buffer and pre-allocated arrays
    * @returns { rate, depth, hasVibrato }
    */
   private analyzeVibrato(): { rate: number; depth: number; hasVibrato: boolean } {
     // Need enough pitch history for analysis
-    if (this.pitchHistory.length < 10) {
+    if (this.pitchHistoryCount < 10) {
       return { rate: 0, depth: 0, hasVibrato: false };
     }
 
-    // Filter out zero pitches (no detection)
-    const validPitches = this.pitchHistory.filter(p => p > 0);
-    if (validPitches.length < 8) {
+    // PERFORMANCE: Extract valid pitches into pre-allocated buffer without filter()
+    let validCount = 0;
+    let pitchSum = 0;
+    for (let i = 0; i < this.pitchHistoryCount; i++) {
+      const p = this.pitchHistory[i];
+      if (p > 0) {
+        this.validPitchBuffer[validCount++] = p;
+        pitchSum += p;
+      }
+    }
+
+    if (validCount < 8) {
       return { rate: 0, depth: 0, hasVibrato: false };
     }
 
     // Calculate mean pitch
-    const meanPitch = validPitches.reduce((a, b) => a + b, 0) / validPitches.length;
+    const meanPitch = pitchSum / validCount;
     if (meanPitch < 80) {
       return { rate: 0, depth: 0, hasVibrato: false };
     }
 
-    // Convert pitches to cents deviation from mean
-    const centDeviations = validPitches.map(p => 1200 * Math.log2(p / meanPitch));
-
-    // Calculate peak-to-peak depth in cents
-    const maxCents = Math.max(...centDeviations);
-    const minCents = Math.min(...centDeviations);
+    // PERFORMANCE: Calculate cent deviations in pre-allocated array
+    let maxCents = -Infinity;
+    let minCents = Infinity;
+    for (let i = 0; i < validCount; i++) {
+      const cents = 1200 * Math.log2(this.validPitchBuffer[i] / meanPitch);
+      this.centDeviations[i] = cents;
+      if (cents > maxCents) maxCents = cents;
+      if (cents < minCents) minCents = cents;
+    }
     const depth = maxCents - minCents;
 
     // Detect zero crossings to estimate vibrato rate
-    // A full vibrato cycle has 2 zero crossings (up-down or down-up)
     let zeroCrossings = 0;
-    for (let i = 1; i < centDeviations.length; i++) {
-      if ((centDeviations[i - 1] < 0 && centDeviations[i] >= 0) ||
-          (centDeviations[i - 1] >= 0 && centDeviations[i] < 0)) {
+    for (let i = 1; i < validCount; i++) {
+      if ((this.centDeviations[i - 1] < 0 && this.centDeviations[i] >= 0) ||
+          (this.centDeviations[i - 1] >= 0 && this.centDeviations[i] < 0)) {
         zeroCrossings++;
       }
     }
 
     // Calculate rate: zero crossings / 2 = cycles, divide by time
-    const timeSpan = validPitches.length / this.SAMPLE_RATE;
+    const timeSpan = validCount / this.SAMPLE_RATE;
     const rate = (zeroCrossings / 2) / timeSpan;
 
     // Determine if this is voice-like vibrato
@@ -496,34 +525,47 @@ export class VoiceDetector {
    * Calculate pitch stability (inverse of variance)
    * Higher values = more stable pitch (guitar-like)
    * Lower values = more variation (voice-like)
+   * PERFORMANCE: Uses ring buffer without allocating new arrays
    * @returns 0-1 stability score
    */
   private calculatePitchStability(): number {
     // Need enough pitch history
-    if (this.pitchHistory.length < 5) {
+    if (this.pitchHistoryCount < 5) {
       return 0.5; // Neutral
     }
 
-    // Filter out zero pitches
-    const validPitches = this.pitchHistory.filter(p => p > 0);
-    if (validPitches.length < 5) {
+    // PERFORMANCE: Count valid pitches and calculate mean without filter/reduce
+    let validCount = 0;
+    let sum = 0;
+    for (let i = 0; i < this.pitchHistoryCount; i++) {
+      const p = this.pitchHistory[i];
+      if (p > 0) {
+        validCount++;
+        sum += p;
+      }
+    }
+
+    if (validCount < 5) {
       return 0.5;
     }
 
-    // Calculate mean
-    const mean = validPitches.reduce((a, b) => a + b, 0) / validPitches.length;
+    const mean = sum / validCount;
     if (mean < 80) return 0.5;
 
-    // Calculate variance in cents (relative to mean pitch)
-    const centDeviations = validPitches.map(p => 1200 * Math.log2(p / mean));
-    const variance = centDeviations.reduce((sum, c) => sum + c * c, 0) / centDeviations.length;
-    const stdDev = Math.sqrt(variance);
+    // PERFORMANCE: Calculate variance inline without map/reduce
+    let varianceSum = 0;
+    for (let i = 0; i < this.pitchHistoryCount; i++) {
+      const p = this.pitchHistory[i];
+      if (p > 0) {
+        const cents = 1200 * Math.log2(p / mean);
+        varianceSum += cents * cents;
+      }
+    }
+    const stdDev = Math.sqrt(varianceSum / validCount);
 
     // Map standard deviation to stability score
     // stdDev < 10 cents = very stable (0.9+)
     // stdDev > 100 cents = very unstable (0.1)
-    // Typical singing: 20-60 cents variation
-    // Guitar sustain: 5-15 cents variation
     const stability = Math.max(0, Math.min(1, 1 - (stdDev / 100)));
 
     return Math.round(stability * 100) / 100;
@@ -532,20 +574,25 @@ export class VoiceDetector {
   /**
    * Analyze amplitude history for tremolo detection
    * Tremolo is amplitude modulation, typically at 4-8 Hz
+   * PERFORMANCE: Uses ring buffer without reduce()
    * @returns true if tremolo-like modulation detected
    */
   private analyzeTremolo(): boolean {
-    if (this.amplitudeHistory.length < 10) {
+    if (this.amplitudeHistoryCount < 10) {
       return false;
     }
 
-    // Calculate mean amplitude
-    const mean = this.amplitudeHistory.reduce((a, b) => a + b, 0) / this.amplitudeHistory.length;
+    // PERFORMANCE: Calculate mean without reduce()
+    let sum = 0;
+    for (let i = 0; i < this.amplitudeHistoryCount; i++) {
+      sum += this.amplitudeHistory[i];
+    }
+    const mean = sum / this.amplitudeHistoryCount;
     if (mean < 0.01) return false;
 
     // Check for periodic modulation by counting peaks
     let peaks = 0;
-    for (let i = 1; i < this.amplitudeHistory.length - 1; i++) {
+    for (let i = 1; i < this.amplitudeHistoryCount - 1; i++) {
       if (this.amplitudeHistory[i] > this.amplitudeHistory[i - 1] &&
           this.amplitudeHistory[i] > this.amplitudeHistory[i + 1] &&
           this.amplitudeHistory[i] > mean) {
@@ -554,7 +601,7 @@ export class VoiceDetector {
     }
 
     // Calculate modulation rate
-    const timeSpan = this.amplitudeHistory.length / this.SAMPLE_RATE;
+    const timeSpan = this.amplitudeHistoryCount / this.SAMPLE_RATE;
     const rate = peaks / timeSpan;
 
     // Voice-like tremolo: 4-8 Hz
@@ -570,7 +617,13 @@ export class VoiceDetector {
     this.smoothedConfidence = 0;
     this.classification = 'instrumental';
     this.confidenceHistory = [];
-    this.pitchHistory = [];
-    this.amplitudeHistory = [];
+
+    // PERFORMANCE: Reset ring buffers (fill with 0 instead of reallocating)
+    this.pitchHistory.fill(0);
+    this.pitchHistoryPos = 0;
+    this.pitchHistoryCount = 0;
+    this.amplitudeHistory.fill(0);
+    this.amplitudeHistoryPos = 0;
+    this.amplitudeHistoryCount = 0;
   }
 }

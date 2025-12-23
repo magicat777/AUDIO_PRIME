@@ -17,6 +17,7 @@ const ONSET_ADAPT_RATE = 0.3; // How much threshold rises after detection (was 0
 const MIN_BPM = 60;
 const MAX_BPM = 180;
 const TEMPO_HISTORY_SIZE = 8; // More history for stability
+const CORRELATION_WINDOW = 128; // PERFORMANCE: Only correlate recent ~2 seconds instead of full history
 
 // Beat tracking parameters
 const BEAT_PREDICT_WINDOW = 0.08; // 80ms window for beat prediction (wider for better alignment)
@@ -47,6 +48,7 @@ interface OnsetBand {
   energyHistory: Float32Array;  // Rolling history for mean calculation
   historyPos: number;
   meanEnergy: number;           // Running mean for better flux calculation
+  energySum: number;            // PERFORMANCE: Running sum to avoid recalculating mean
 }
 
 /**
@@ -70,7 +72,7 @@ export class BeatDetector {
   private tempoHistory: number[] = [];
   private tempoConfidence: number = 0;
   private lastTempoUpdate: number = 0;
-  private readonly TEMPO_UPDATE_INTERVAL = 500; // ms between tempo recalculations
+  private readonly TEMPO_UPDATE_INTERVAL = 750; // PERFORMANCE: Reduced frequency (was 500ms)
 
   // Beat tracking
   private beatPhase: number = 0;
@@ -97,8 +99,11 @@ export class BeatDetector {
   private readonly SILENCE_THRESHOLD = 0.01; // Energy threshold for silence
   private readonly SILENCE_RESET_MS = 3000; // Reset after 3 seconds of silence
 
-  // Debug
+  // Debug - PERFORMANCE: Cache debug values to avoid recalculating every frame
   private debugCounter: number = 0;
+  private cachedOnsetMax: number = 0;
+  private lastDebugUpdate: number = 0;
+  private readonly DEBUG_UPDATE_INTERVAL = 100; // Update debug info every 100ms
 
   constructor(_sampleRate = 48000, _fftSize = 4096) {
     // Note: sampleRate and fftSize params kept for API compatibility but not used
@@ -119,6 +124,7 @@ export class BeatDetector {
         energyHistory: new Float32Array(ENERGY_HISTORY_SIZE),
         historyPos: 0,
         meanEnergy: 0,
+        energySum: 0,
       },
       {
         name: 'snare',
@@ -130,6 +136,7 @@ export class BeatDetector {
         energyHistory: new Float32Array(ENERGY_HISTORY_SIZE),
         historyPos: 0,
         meanEnergy: 0,
+        energySum: 0,
       },
       {
         name: 'hihat',
@@ -141,6 +148,7 @@ export class BeatDetector {
         energyHistory: new Float32Array(ENERGY_HISTORY_SIZE),
         historyPos: 0,
         meanEnergy: 0,
+        energySum: 0,
       },
     ];
 
@@ -173,16 +181,14 @@ export class BeatDetector {
       const energy = this.calculateBandEnergy(spectrum, band.minBar, band.maxBar);
       totalEnergy += energy;
 
-      // Update energy history and calculate running mean
+      // PERFORMANCE: Update running sum (subtract old, add new) instead of recalculating
+      const oldEnergy = band.energyHistory[band.historyPos];
+      band.energySum = band.energySum - oldEnergy + energy;
       band.energyHistory[band.historyPos] = energy;
       band.historyPos = (band.historyPos + 1) % band.energyHistory.length;
 
-      // Calculate mean energy over history
-      let sum = 0;
-      for (let i = 0; i < band.energyHistory.length; i++) {
-        sum += band.energyHistory[i];
-      }
-      band.meanEnergy = sum / band.energyHistory.length;
+      // Calculate mean energy from running sum (O(1) instead of O(n))
+      band.meanEnergy = band.energySum / band.energyHistory.length;
 
       // Spectral flux: how much energy increased compared to previous frame
       const flux = Math.max(0, energy - band.prevEnergy);
@@ -294,6 +300,7 @@ export class BeatDetector {
 
   /**
    * Update tempo estimate using autocorrelation
+   * PERFORMANCE: Optimized to use smaller correlation window and stride
    */
   private updateTempo(): void {
     // Calculate autocorrelation of onset history
@@ -305,12 +312,19 @@ export class BeatDetector {
     let bestLag = 0;
     let bestCorr = 0;
 
+    // PERFORMANCE: Use smaller correlation window and stride=2 to reduce iterations
+    // Before: ~40 lags × ~500 samples = 20,000 ops
+    // After:  ~40 lags × ~64 samples = 2,560 ops (8x reduction)
+    const windowSize = Math.min(CORRELATION_WINDOW, this.onsetHistorySize - maxLag);
+    const stride = 2; // Sample every 2nd element
+
     // Calculate autocorrelation for each lag
     for (let lag = minLag; lag <= Math.min(maxLag, this.onsetHistorySize / 2); lag++) {
       let correlation = 0;
       let count = 0;
 
-      for (let i = 0; i < this.onsetHistorySize - lag; i++) {
+      // PERFORMANCE: Only correlate recent samples with stride
+      for (let i = 0; i < windowSize; i += stride) {
         const idx1 = (this.onsetWritePos - 1 - i + this.onsetHistorySize) % this.onsetHistorySize;
         const idx2 =
           (this.onsetWritePos - 1 - i - lag + this.onsetHistorySize) % this.onsetHistorySize;
@@ -579,11 +593,13 @@ export class BeatDetector {
       band.energyHistory.fill(0);
       band.historyPos = 0;
       band.meanEnergy = 0;
+      band.energySum = 0;
     }
   }
 
   /**
    * Get debug info for display
+   * PERFORMANCE: Uses cached onset max to avoid O(n) loop every frame
    */
   getDebugInfo(): {
     kickEnergy: number;
@@ -593,24 +609,26 @@ export class BeatDetector {
     onsetHistoryMax: number;
     frameTimeMs: number;
   } {
-    // Get current energy levels from bands
-    const kickBand = this.bands.find(b => b.name === 'kick');
-    const snareBand = this.bands.find(b => b.name === 'snare');
-    const hihatBand = this.bands.find(b => b.name === 'hihat');
+    const now = performance.now();
 
-    // Find max onset in recent history
-    let onsetMax = 0;
-    for (let i = 0; i < Math.min(60, this.onsetHistorySize); i++) {
-      const idx = (this.onsetWritePos - 1 - i + this.onsetHistorySize) % this.onsetHistorySize;
-      onsetMax = Math.max(onsetMax, this.onsetHistory[idx]);
+    // PERFORMANCE: Only recalculate onset max periodically (every 100ms)
+    if (now - this.lastDebugUpdate > this.DEBUG_UPDATE_INTERVAL) {
+      this.lastDebugUpdate = now;
+      let onsetMax = 0;
+      for (let i = 0; i < Math.min(60, this.onsetHistorySize); i++) {
+        const idx = (this.onsetWritePos - 1 - i + this.onsetHistorySize) % this.onsetHistorySize;
+        onsetMax = Math.max(onsetMax, this.onsetHistory[idx]);
+      }
+      this.cachedOnsetMax = onsetMax;
     }
 
+    // PERFORMANCE: Direct band access instead of find() every frame
     return {
-      kickEnergy: kickBand?.prevEnergy || 0,
-      snareEnergy: snareBand?.prevEnergy || 0,
-      hihatEnergy: hihatBand?.prevEnergy || 0,
+      kickEnergy: this.bands[0].prevEnergy,
+      snareEnergy: this.bands[1].prevEnergy,
+      hihatEnergy: this.bands[2].prevEnergy,
       tempoHistoryLen: this.tempoHistory.length,
-      onsetHistoryMax: onsetMax,
+      onsetHistoryMax: this.cachedOnsetMax,
       frameTimeMs: this.frameTimeMs,
     };
   }
