@@ -10,6 +10,8 @@ A modern, high-performance audio analysis application built with Electron + Svel
 ![Svelte](https://img.shields.io/badge/svelte-5+-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
+![AUDIO_PRIME Screenshot](docs/images/audio_prime_main.png)
+
 ---
 
 ## Features

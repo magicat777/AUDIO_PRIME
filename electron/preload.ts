@@ -99,6 +99,10 @@ export interface ElectronAPI {
     save: (data: unknown) => Promise<LayoutSaveResult>;
     load: () => Promise<LayoutLoadResult>;
   };
+  settings: {
+    get: (key: string) => Promise<unknown>;
+    set: (key: string, value: unknown) => Promise<void>;
+  };
   spotify: {
     connect: () => Promise<{ success: boolean; error?: string }>;
     disconnect: () => Promise<{ success: boolean }>;
@@ -154,6 +158,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   layout: {
     save: (data: unknown) => ipcRenderer.invoke('layout:save', data),
     load: () => ipcRenderer.invoke('layout:load'),
+  },
+  settings: {
+    get: (key: string) => ipcRenderer.invoke('settings:get', key),
+    set: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),
   },
   spotify: {
     connect: () => ipcRenderer.invoke('spotify:connect'),

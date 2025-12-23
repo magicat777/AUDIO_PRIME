@@ -78,6 +78,7 @@ class AudioEngineClass {
   public stereoSamples: Writable<Float32Array>;  // Interleaved L/R samples for goniometer
   public beatInfo: Writable<BeatInfo>;
   public voiceInfo: Writable<VoiceInfo>;
+  public inputGain: Writable<number>;  // Input level adjustment (0.0 to 2.0, 1.0 = unity)
 
   // Internal state
   private devices: AudioDevice[] = [];
@@ -155,6 +156,12 @@ class AudioEngineClass {
       pitchStability: 0.5,
       hasVibrato: false,
     });
+
+    // Initialize input gain (1.0 = unity gain, range 0.0 to 2.0)
+    this.inputGain = writable<number>(1.0);
+
+    // Load saved input gain from config
+    this.loadInputGain();
 
     // Pre-allocate audio buffer (large enough for max FFT size)
     this.audioBuffer = new Float32Array(FFT_SIZE_MAX * 2);
@@ -716,9 +723,16 @@ class AudioEngineClass {
   }
 
   private processAudioData(samples: Float32Array): void {
+    // Apply input gain adjustment
+    const gain = get(this.inputGain);
+    if (gain !== 1.0) {
+      for (let i = 0; i < samples.length; i++) {
+        samples[i] *= gain;
+      }
+    }
 
     // Clamp samples to valid range to protect downstream processing
-    // parec float32le should be in -1 to 1, but clamp just in case
+    // parec float32le should be in -1 to 1, but clamp just in case (after gain)
     for (let i = 0; i < samples.length; i++) {
       if (!isFinite(samples[i])) {
         samples[i] = 0;
@@ -895,6 +909,40 @@ class AudioEngineClass {
   resetLUFS(): void {
     this.lufsMeter.reset();
     this.truePeakDetector.resetPeaks();
+  }
+
+  /**
+   * Load input gain from config file
+   */
+  private async loadInputGain(): Promise<void> {
+    if (!window.electronAPI?.settings?.get) return;
+    try {
+      const savedGain = await window.electronAPI.settings.get('inputGain');
+      if (typeof savedGain === 'number' && savedGain >= 0 && savedGain <= 2) {
+        this.inputGain.set(savedGain);
+      }
+    } catch {
+      // Ignore load errors, use default
+    }
+  }
+
+  /**
+   * Set input gain and save to config
+   */
+  setInputGain(gain: number): void {
+    const clampedGain = Math.max(0, Math.min(2, gain));
+    this.inputGain.set(clampedGain);
+    // Save to config file
+    if (window.electronAPI?.settings?.set) {
+      window.electronAPI.settings.set('inputGain', clampedGain);
+    }
+  }
+
+  /**
+   * Get current input gain value
+   */
+  getInputGain(): number {
+    return get(this.inputGain);
   }
 
   destroy(): void {

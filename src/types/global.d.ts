@@ -98,6 +98,10 @@ export interface ElectronAPI {
     save: (data: unknown) => Promise<LayoutSaveResult>;
     load: () => Promise<LayoutLoadResult>;
   };
+  settings: {
+    get: (key: string) => Promise<unknown>;
+    set: (key: string, value: unknown) => Promise<void>;
+  };
   spotify: {
     connect: () => Promise<{ success: boolean; error?: string }>;
     disconnect: () => Promise<{ success: boolean }>;

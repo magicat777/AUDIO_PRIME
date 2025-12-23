@@ -108,6 +108,9 @@ const IPC = {
   // Layout persistence
   LAYOUT_SAVE: 'layout:save',
   LAYOUT_LOAD: 'layout:load',
+  // Settings persistence
+  SETTINGS_GET: 'settings:get',
+  SETTINGS_SET: 'settings:set',
   // Spotify channels
   SPOTIFY_CONNECT: 'spotify:connect',
   SPOTIFY_DISCONNECT: 'spotify:disconnect',
@@ -425,6 +428,65 @@ ipcMain.handle(IPC.LAYOUT_LOAD, async () => {
     console.error('Error loading layout:', error);
     return { success: false, error: String(error) };
   }
+});
+
+// ============================================
+// Settings Persistence (File-based)
+// ============================================
+
+const SETTINGS_FILENAME = 'audio-prime-settings.json';
+
+/**
+ * Get the path to the settings file in user data directory
+ */
+function getSettingsFilePath(): string {
+  return join(app.getPath('userData'), SETTINGS_FILENAME);
+}
+
+/**
+ * Load all settings from file
+ */
+function loadSettings(): Record<string, unknown> {
+  try {
+    const filePath = getSettingsFilePath();
+    if (!fs.existsSync(filePath)) {
+      return {};
+    }
+    const jsonData = fs.readFileSync(filePath, 'utf-8');
+    return JSON.parse(jsonData) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Save all settings to file
+ */
+function saveSettings(settings: Record<string, unknown>): void {
+  try {
+    const filePath = getSettingsFilePath();
+    const jsonData = JSON.stringify(settings, null, 2);
+    fs.writeFileSync(filePath, jsonData, 'utf-8');
+  } catch (error) {
+    console.error('Error saving settings:', error);
+  }
+}
+
+/**
+ * Get a setting value
+ */
+ipcMain.handle(IPC.SETTINGS_GET, async (_, key: string) => {
+  const settings = loadSettings();
+  return settings[key];
+});
+
+/**
+ * Set a setting value
+ */
+ipcMain.handle(IPC.SETTINGS_SET, async (_, key: string, value: unknown) => {
+  const settings = loadSettings();
+  settings[key] = value;
+  saveSettings(settings);
 });
 
 // ============================================

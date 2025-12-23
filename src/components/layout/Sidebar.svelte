@@ -12,6 +12,25 @@
   let devices: AudioDevice[] = [];
   let selectedDeviceId: string | null = null;
 
+  // Input gain control
+  let inputGain = 1.0;
+  audioEngine.inputGain.subscribe(value => {
+    inputGain = value;
+  });
+
+  function handleGainChange(event: Event) {
+    const target = event.target as HTMLInputElement;
+    const newGain = parseFloat(target.value);
+    audioEngine.setInputGain(newGain);
+  }
+
+  // Convert gain to dB for display
+  function gainToDb(gain: number): string {
+    if (gain === 0) return '-∞';
+    const db = 20 * Math.log10(gain);
+    return db >= 0 ? `+${db.toFixed(1)}` : db.toFixed(1);
+  }
+
   // Accordion state for audio sources, modules, layout, and presets (collapsed by default)
   let monitorsExpanded = false;
   let inputsExpanded = false;
@@ -243,6 +262,40 @@
             {/each}
           </div>
         {/if}
+      </div>
+
+      <!-- Input Level Slider -->
+      <div class="input-level-control">
+        <div class="level-header">
+          <span class="level-label">Input Level</span>
+          <span class="level-value">{gainToDb(inputGain)} dB</span>
+        </div>
+        <div class="level-slider-row">
+          <input
+            type="range"
+            min="0"
+            max="2"
+            step="0.01"
+            value={inputGain}
+            on:input={handleGainChange}
+            class="level-slider"
+            title="Adjust input gain ({gainToDb(inputGain)} dB)"
+          />
+          <button
+            class="reset-gain-btn"
+            on:click={() => audioEngine.setInputGain(1.0)}
+            title="Reset to unity gain (0 dB)"
+            class:active={inputGain === 1.0}
+          >
+            0
+          </button>
+        </div>
+        <div class="level-scale">
+          <span>-∞</span>
+          <span>-6</span>
+          <span>0</span>
+          <span>+6</span>
+        </div>
       </div>
 
       {#if devices.length === 0}
@@ -1010,5 +1063,118 @@
     font-size: 0.8rem;
     font-style: italic;
     padding: 0.25rem 0;
+  }
+
+  /* Input Level Control Styles */
+  .input-level-control {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+  }
+
+  .level-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .level-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  .level-value {
+    font-size: 0.75rem;
+    font-family: monospace;
+    color: var(--accent-color);
+    min-width: 50px;
+    text-align: right;
+  }
+
+  .level-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .level-slider {
+    flex: 1;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: linear-gradient(to right,
+      var(--meter-red) 0%,
+      var(--meter-yellow) 25%,
+      var(--meter-green) 50%,
+      var(--meter-yellow) 75%,
+      var(--meter-red) 100%
+    );
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .level-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    background: var(--text-primary);
+    border: 2px solid var(--bg-primary);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+
+  .level-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: var(--text-primary);
+    border: 2px solid var(--bg-primary);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+
+  .reset-gain-btn {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .reset-gain-btn:hover {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: white;
+  }
+
+  .reset-gain-btn.active {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: white;
+  }
+
+  .level-scale {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 0.25rem;
+    padding: 0 2px;
+  }
+
+  .level-scale span {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    font-family: monospace;
   }
 </style>
