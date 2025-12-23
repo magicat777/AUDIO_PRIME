@@ -16,9 +16,47 @@
   let peakCtx: CanvasRenderingContext2D | null = null;
   let spectrumStandard = new Float32Array(512);
   let spectrumMultiRes = new Float32Array(512);
+  let spectrumLeft = new Float32Array(512);   // Left channel spectrum (standard)
+  let spectrumRight = new Float32Array(512);  // Right channel spectrum (standard)
+  let spectrumMultiResLeft = new Float32Array(512);   // Left channel spectrum (multi-res)
+  let spectrumMultiResRight = new Float32Array(512);  // Right channel spectrum (multi-res)
   let fftMode: FFTMode = 'standard';
   let containerWidth = 0;
   let containerHeight = 0;
+
+  // Display mode: 'bars' (discrete), 'smoo' (smooth WebGL), 'tech' (technical)
+  type DisplayMode = 'bars' | 'smoo' | 'tech';
+  let displayMode: DisplayMode = 'bars';
+
+  function toggleDisplayMode() {
+    if (displayMode === 'bars') {
+      displayMode = 'smoo';
+    } else if (displayMode === 'smoo') {
+      displayMode = 'tech';
+    } else {
+      displayMode = 'bars';
+    }
+  }
+
+  // Get display mode label for toggle button
+  $: displayModeLabel = displayMode === 'bars' ? 'BARS' : displayMode === 'smoo' ? 'SMOO' : 'TECH';
+
+  // TECH mode constants
+  const TECH_FREQ_LABELS = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+  const TECH_DB_LABELS = [0, -10, -20, -30, -40, -50, -60, -70];
+  const TECH_MIN_DB = -80;
+  const TECH_MAX_DB = 0;
+  const TECH_MIN_FREQ = 20;
+  const TECH_MAX_FREQ = 20000;
+
+  // Pre-calculate log positions for spectrum bars (512 bars mapped to log frequency)
+  const logPositions = new Float32Array(512);
+  const logRange = Math.log10(TECH_MAX_FREQ / TECH_MIN_FREQ);
+  for (let i = 0; i < 512; i++) {
+    // Each bar i represents a log-spaced frequency
+    const t = i / 511;
+    logPositions[i] = t; // Already log-distributed in spectrum data
+  }
 
   // Frequency cursor state
   let cursorX = 0;
@@ -27,7 +65,7 @@
   let cursorFreq = 0;
   let cursorDb = -100;
 
-  // Subscribe to both spectrum sources
+  // Subscribe to both spectrum sources (mono for compatibility)
   const unsubStandard = audioEngine.spectrum.subscribe((data) => {
     spectrumStandard = data;
   });
@@ -36,13 +74,35 @@
     spectrumMultiRes = data;
   });
 
+  // Subscribe to L/R stereo spectrum sources (standard FFT)
+  const unsubLeft = audioEngine.spectrumLeft.subscribe((data) => {
+    spectrumLeft = data;
+  });
+
+  const unsubRight = audioEngine.spectrumRight.subscribe((data) => {
+    spectrumRight = data;
+  });
+
+  // Subscribe to L/R stereo spectrum sources (multi-res FFT)
+  const unsubMultiResLeft = audioEngine.spectrumMultiResLeft.subscribe((data) => {
+    spectrumMultiResLeft = data;
+  });
+
+  const unsubMultiResRight = audioEngine.spectrumMultiResRight.subscribe((data) => {
+    spectrumMultiResRight = data;
+  });
+
   // Subscribe to state for FFT mode
   const unsubState = audioEngine.state.subscribe((state) => {
     fftMode = state.fftMode;
   });
 
-  // Get current spectrum based on mode
+  // Get current spectrum based on mode (mono for cursor display)
   $: currentSpectrum = fftMode === 'standard' ? spectrumStandard : spectrumMultiRes;
+
+  // Get current L/R spectrums based on FFT mode
+  $: currentSpectrumLeft = fftMode === 'standard' ? spectrumLeft : spectrumMultiResLeft;
+  $: currentSpectrumRight = fftMode === 'standard' ? spectrumRight : spectrumMultiResRight;
 
   // Sync visibility with RenderCoordinator
   $: renderCoordinator.setVisibility(RENDER_ID, $moduleVisibility.spectrum);
@@ -111,16 +171,14 @@
   const MARGIN_TOP = 20;
   const MARGIN_BOTTOM = 30;
 
-  // Draw peak hold indicators on 2D overlay (mirrored for stereo display)
+  // Draw peak hold indicators on 2D overlay (L/R stereo display)
   function drawPeakHold() {
     if (!peakCtx) return;
 
-    // Get peak holds from appropriate analyzer
-    const analyzer = fftMode === 'standard'
-      ? audioEngine.getSpectrumAnalyzer()
-      : audioEngine.getMultiResAnalyzer();
-    const peakHold = analyzer.getPeakHolds();
-    const barCount = peakHold.length;
+    // Get peak holds from L/R analyzers
+    const peakHoldLeft = audioEngine.getSpectrumAnalyzerLeft().getPeakHolds();
+    const peakHoldRight = audioEngine.getSpectrumAnalyzerRight().getPeakHolds();
+    const barCount = peakHoldLeft.length;
     const width = peakCanvas.width;
     const height = peakCanvas.height;
 
@@ -140,7 +198,7 @@
     const graphWidth = width - marginLeft - marginRight;
     const graphHeight = height - marginTop - marginBottom;
 
-    // Match WebGL renderer settings for mirrored display
+    // Match WebGL renderer settings for stereo display
     const halfHeight = graphHeight / 2;
     const centerY = marginTop + halfHeight;  // Center line of graph
     const barWidth = graphWidth / barCount;
@@ -149,19 +207,430 @@
     peakCtx.fillStyle = 'rgba(255, 255, 255, 0.95)';
 
     for (let i = 0; i < barCount; i++) {
-      const peakValue = peakHold[i];
+      const x = marginLeft + i * barWidth;
 
-      if (peakValue > 0.02) {
-        const x = marginLeft + i * barWidth;
-
-        // Top half: peak indicator grows upward from center
-        const yTop = centerY - peakValue * halfHeight;
+      // Top half: LEFT channel peak indicator
+      const peakValueLeft = peakHoldLeft[i];
+      if (peakValueLeft > 0.02) {
+        const yTop = centerY - peakValueLeft * halfHeight;
         peakCtx.fillRect(x, yTop - 2, barWidth * 0.98, 2);
+      }
 
-        // Bottom half: peak indicator grows downward from center (mirrored)
-        const yBottom = centerY + peakValue * halfHeight;
+      // Bottom half: RIGHT channel peak indicator
+      const peakValueRight = peakHoldRight[i];
+      if (peakValueRight > 0.02) {
+        const yBottom = centerY + peakValueRight * halfHeight;
         peakCtx.fillRect(x, yBottom, barWidth * 0.98, 2);
       }
+    }
+  }
+
+  // BARS mode: Discrete rectangular bars with L/R stereo (Canvas2D)
+  function drawBarsMode() {
+    if (!peakCtx) return;
+
+    const width = peakCanvas.width;
+    const height = peakCanvas.height;
+    const dpr = window.devicePixelRatio || 1;
+
+    // Margins scaled for DPR
+    const marginLeft = MARGIN_LEFT * dpr;
+    const marginRight = MARGIN_RIGHT * dpr;
+    const marginTop = MARGIN_TOP * dpr;
+    const marginBottom = MARGIN_BOTTOM * dpr;
+
+    const graphLeft = marginLeft;
+    const graphTop = marginTop;
+    const graphWidth = width - marginLeft - marginRight;
+    const graphHeight = height - marginTop - marginBottom;
+    const graphBottom = graphTop + graphHeight;
+
+    // Stereo: split into top (L) and bottom (R) halves
+    const halfHeight = graphHeight / 2;
+    const centerY = graphTop + halfHeight;
+
+    // Clear canvas
+    peakCtx.clearRect(0, 0, width, height);
+
+    // Fill background
+    peakCtx.fillStyle = '#0a0c10';
+    peakCtx.fillRect(0, 0, width, height);
+
+    // Draw grid lines (behind bars)
+    const graphRight = graphLeft + graphWidth;
+    peakCtx.strokeStyle = 'rgba(60, 70, 90, 0.4)';
+    peakCtx.lineWidth = 1 * dpr;
+
+    // Horizontal grid lines (dB) - top half
+    const gridDbValues = [-10, -20, -30];  // Skip 0 and -40 (edges)
+    for (const db of gridDbValues) {
+      const normalizedDb = -db / 40;
+      const y = graphTop + normalizedDb * halfHeight;
+      peakCtx.beginPath();
+      peakCtx.moveTo(graphLeft, y);
+      peakCtx.lineTo(graphRight, y);
+      peakCtx.stroke();
+    }
+
+    // Horizontal grid lines (dB) - bottom half (mirrored)
+    for (const db of gridDbValues) {
+      const normalizedDb = -db / 40;
+      const y = centerY + normalizedDb * halfHeight;
+      peakCtx.beginPath();
+      peakCtx.moveTo(graphLeft, y);
+      peakCtx.lineTo(graphRight, y);
+      peakCtx.stroke();
+    }
+
+    // Vertical grid lines (frequency) - logarithmic
+    const gridFreqValues = [50, 100, 200, 500, 1000, 2000, 5000, 10000];
+    for (const freq of gridFreqValues) {
+      const x = graphLeft + (Math.log10(freq / 20) / logRange) * graphWidth;
+      peakCtx.beginPath();
+      peakCtx.moveTo(x, graphTop);
+      peakCtx.lineTo(x, graphBottom);
+      peakCtx.stroke();
+    }
+
+    // Draw center line (brighter than grid)
+    peakCtx.strokeStyle = 'rgba(80, 80, 100, 0.6)';
+    peakCtx.lineWidth = 1 * dpr;
+    peakCtx.beginPath();
+    peakCtx.moveTo(graphLeft, centerY);
+    peakCtx.lineTo(graphRight, centerY);
+    peakCtx.stroke();
+
+    // Bar configuration - use fewer bars for discrete look
+    const numBars = 128;  // Reduced from 512 for visible discrete bars
+    const barGap = 2 * dpr;
+    const barWidth = (graphWidth - (numBars - 1) * barGap) / numBars;
+
+    // Downsample spectrum to numBars
+    const step = currentSpectrumLeft.length / numBars;
+
+    // Colors matching the reference screenshot
+    const leftColor = 'rgba(220, 80, 180, 0.9)';   // Magenta/pink for Left
+    const rightColor = 'rgba(80, 180, 220, 0.9)';  // Cyan for Right
+
+    // Draw LEFT channel bars (top half, growing upward from center)
+    peakCtx.fillStyle = leftColor;
+    for (let i = 0; i < numBars; i++) {
+      // Average the spectrum values for this bar
+      const startIdx = Math.floor(i * step);
+      const endIdx = Math.floor((i + 1) * step);
+      let sum = 0;
+      for (let j = startIdx; j < endIdx && j < currentSpectrumLeft.length; j++) {
+        sum += currentSpectrumLeft[j];
+      }
+      const amplitude = sum / (endIdx - startIdx);
+
+      const x = graphLeft + i * (barWidth + barGap);
+      const barHeight = amplitude * halfHeight;
+
+      if (barHeight > 1) {
+        peakCtx.fillRect(x, centerY - barHeight, barWidth, barHeight);
+      }
+    }
+
+    // Draw RIGHT channel bars (bottom half, growing downward from center)
+    peakCtx.fillStyle = rightColor;
+    for (let i = 0; i < numBars; i++) {
+      const startIdx = Math.floor(i * step);
+      const endIdx = Math.floor((i + 1) * step);
+      let sum = 0;
+      for (let j = startIdx; j < endIdx && j < currentSpectrumRight.length; j++) {
+        sum += currentSpectrumRight[j];
+      }
+      const amplitude = sum / (endIdx - startIdx);
+
+      const x = graphLeft + i * (barWidth + barGap);
+      const barHeight = amplitude * halfHeight;
+
+      if (barHeight > 1) {
+        peakCtx.fillRect(x, centerY, barWidth, barHeight);
+      }
+    }
+
+    // Draw L/R labels
+    peakCtx.fillStyle = leftColor;
+    peakCtx.font = `bold ${12 * dpr}px monospace`;
+    peakCtx.textAlign = 'left';
+    peakCtx.textBaseline = 'top';
+    peakCtx.fillText('L', graphLeft + 5 * dpr, graphTop + 5 * dpr);
+
+    peakCtx.fillStyle = rightColor;
+    peakCtx.fillText('R', graphLeft + 5 * dpr, centerY + 5 * dpr);
+
+    // Draw frequency scale at bottom
+    peakCtx.fillStyle = '#808080';
+    peakCtx.font = `${9 * dpr}px monospace`;
+    peakCtx.textAlign = 'center';
+    peakCtx.textBaseline = 'top';
+    const freqLabels = [50, 100, 200, 500, '1k', '2k', '5k', '10k', '20k'];
+    const freqValues = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+    for (let i = 0; i < freqLabels.length; i++) {
+      const x = graphLeft + (Math.log10(freqValues[i] / 20) / logRange) * graphWidth;
+      peakCtx.fillText(String(freqLabels[i]), x, graphBottom + 4 * dpr);
+    }
+
+    // Draw dB scale on left side
+    // Top half: 0dB at top, lower dB toward center
+    // Bottom half: lower dB at center, 0dB at bottom
+    const dbLabels = [0, -10, -20, -30, -40];
+    peakCtx.fillStyle = '#808080';
+    peakCtx.font = `${9 * dpr}px monospace`;
+    peakCtx.textAlign = 'right';
+    peakCtx.textBaseline = 'middle';
+
+    // Top half dB labels (L channel)
+    for (const db of dbLabels) {
+      // Map dB to position: 0dB at top, -40dB at center
+      const normalizedDb = -db / 40; // 0 -> 0, -40 -> 1
+      const y = graphTop + normalizedDb * halfHeight;
+      peakCtx.fillText(`${db}`, graphLeft - 5 * dpr, y);
+    }
+
+    // Bottom half dB labels (R channel) - mirrored
+    for (const db of dbLabels) {
+      const normalizedDb = -db / 40;
+      const y = centerY + normalizedDb * halfHeight;
+      // Skip center label (already drawn for top half at -40)
+      if (db !== -40) {
+        peakCtx.fillText(`${db}`, graphLeft - 5 * dpr, y);
+      }
+    }
+  }
+
+  // TECH mode: Draw professional spectrum analyzer display with L/R stereo
+  function drawTechMode() {
+    if (!peakCtx) return;
+
+    const width = peakCanvas.width;
+    const height = peakCanvas.height;
+    const dpr = window.devicePixelRatio || 1;
+
+    // Margins scaled for DPR
+    const marginLeft = MARGIN_LEFT * dpr;
+    const marginRight = MARGIN_RIGHT * dpr;
+    const marginTop = MARGIN_TOP * dpr;
+    const marginBottom = MARGIN_BOTTOM * dpr;
+
+    const graphLeft = marginLeft;
+    const graphTop = marginTop;
+    const graphWidth = width - marginLeft - marginRight;
+    const graphHeight = height - marginTop - marginBottom;
+    const graphBottom = graphTop + graphHeight;
+    const graphRight = graphLeft + graphWidth;
+
+    // Stereo: split into top (L) and bottom (R) halves
+    const halfHeight = graphHeight / 2;
+    const centerY = graphTop + halfHeight;
+
+    // Clear the entire canvas
+    peakCtx.clearRect(0, 0, width, height);
+
+    // Fill background
+    peakCtx.fillStyle = '#0a0c10';
+    peakCtx.fillRect(0, 0, width, height);
+
+    // Draw center line (L/R separator)
+    peakCtx.strokeStyle = 'rgba(100, 100, 120, 0.6)';
+    peakCtx.lineWidth = 1 * dpr;
+    peakCtx.beginPath();
+    peakCtx.moveTo(graphLeft, centerY);
+    peakCtx.lineTo(graphRight, centerY);
+    peakCtx.stroke();
+
+    // Draw grid lines (for each half)
+    peakCtx.strokeStyle = 'rgba(60, 70, 90, 0.4)';
+    peakCtx.lineWidth = 1 * dpr;
+
+    // Horizontal grid lines (dB) - top half
+    for (const db of TECH_DB_LABELS) {
+      if (db >= -40) { // Only show top portion of dB range
+        const normalizedDb = (TECH_MAX_DB - db) / (TECH_MAX_DB - TECH_MIN_DB);
+        const y = graphTop + normalizedDb * halfHeight;
+        peakCtx.beginPath();
+        peakCtx.moveTo(graphLeft, y);
+        peakCtx.lineTo(graphRight, y);
+        peakCtx.stroke();
+      }
+    }
+
+    // Horizontal grid lines (dB) - bottom half (mirrored)
+    for (const db of TECH_DB_LABELS) {
+      if (db >= -40) {
+        const normalizedDb = (TECH_MAX_DB - db) / (TECH_MAX_DB - TECH_MIN_DB);
+        const y = centerY + normalizedDb * halfHeight;
+        peakCtx.beginPath();
+        peakCtx.moveTo(graphLeft, y);
+        peakCtx.lineTo(graphRight, y);
+        peakCtx.stroke();
+      }
+    }
+
+    // Vertical grid lines (frequency) - logarithmic
+    for (const freq of TECH_FREQ_LABELS) {
+      const x = graphLeft + (Math.log10(freq / TECH_MIN_FREQ) / logRange) * graphWidth;
+      peakCtx.beginPath();
+      peakCtx.moveTo(x, graphTop);
+      peakCtx.lineTo(x, graphBottom);
+      peakCtx.stroke();
+    }
+
+    // Draw L/R labels
+    peakCtx.fillStyle = 'rgba(100, 200, 100, 0.8)';
+    peakCtx.font = `bold ${12 * dpr}px monospace`;
+    peakCtx.textAlign = 'left';
+    peakCtx.textBaseline = 'top';
+    peakCtx.fillText('L', graphLeft + 5 * dpr, graphTop + 5 * dpr);
+
+    peakCtx.fillStyle = 'rgba(100, 180, 255, 0.8)';
+    peakCtx.fillText('R', graphLeft + 5 * dpr, centerY + 5 * dpr);
+
+    // Draw frequency labels (bottom)
+    peakCtx.fillStyle = '#808080';
+    peakCtx.font = `${10 * dpr}px monospace`;
+    peakCtx.textAlign = 'center';
+    peakCtx.textBaseline = 'top';
+    for (const freq of TECH_FREQ_LABELS) {
+      const x = graphLeft + (Math.log10(freq / TECH_MIN_FREQ) / logRange) * graphWidth;
+      const label = freq >= 1000 ? `${freq / 1000}k` : `${freq}`;
+      peakCtx.fillText(label, x, graphBottom + 5 * dpr);
+    }
+
+    // Draw dB scale on left side
+    const techDbLabels = [0, -10, -20, -30, -40];
+    peakCtx.fillStyle = '#808080';
+    peakCtx.font = `${9 * dpr}px monospace`;
+    peakCtx.textAlign = 'right';
+    peakCtx.textBaseline = 'middle';
+
+    // Top half dB labels (L channel)
+    for (const db of techDbLabels) {
+      // Map dB to position: 0dB at top edge, -40dB at center
+      const normalizedDb = (TECH_MAX_DB - db) / (TECH_MAX_DB - (-40));
+      const y = graphTop + normalizedDb * halfHeight;
+      peakCtx.fillText(`${db}`, graphLeft - 5 * dpr, y);
+    }
+
+    // Bottom half dB labels (R channel) - mirrored
+    for (const db of techDbLabels) {
+      const normalizedDb = (TECH_MAX_DB - db) / (TECH_MAX_DB - (-40));
+      const y = centerY + normalizedDb * halfHeight;
+      // Skip center label (already drawn for top half at -40)
+      if (db !== -40) {
+        peakCtx.fillText(`${db}`, graphLeft - 5 * dpr, y);
+      }
+    }
+
+    // Get peak holds for L/R
+    const peakHoldLeft = audioEngine.getSpectrumAnalyzerLeft().getPeakHolds();
+    const peakHoldRight = audioEngine.getSpectrumAnalyzerRight().getPeakHolds();
+
+    // Helper function to convert amplitude to Y position
+    function amplitudeToY(amplitude: number, isTop: boolean): number {
+      const dbValue = amplitude > 0.001 ? -80 + amplitude * 70 : TECH_MIN_DB;
+      const normalizedDb = (TECH_MAX_DB - dbValue) / (TECH_MAX_DB - TECH_MIN_DB);
+      if (isTop) {
+        // Top half: grows upward from center
+        return centerY - (1 - normalizedDb) * halfHeight;
+      } else {
+        // Bottom half: grows downward from center
+        return centerY + (1 - normalizedDb) * halfHeight;
+      }
+    }
+
+    // --- LEFT CHANNEL (top half) ---
+    // Create gradient for left spectrum fill (green tones)
+    const gradientLeft = peakCtx.createLinearGradient(0, centerY, 0, graphTop);
+    gradientLeft.addColorStop(0, 'rgba(34, 197, 94, 0.6)');    // Green at center
+    gradientLeft.addColorStop(0.5, 'rgba(74, 222, 128, 0.7)'); // Light green
+    gradientLeft.addColorStop(1, 'rgba(250, 204, 21, 0.8)');   // Yellow at top (loud)
+
+    // Draw filled left spectrum area
+    peakCtx.beginPath();
+    peakCtx.moveTo(graphLeft, centerY);
+    for (let i = 0; i < currentSpectrumLeft.length; i++) {
+      const x = graphLeft + (i / (currentSpectrumLeft.length - 1)) * graphWidth;
+      const y = amplitudeToY(currentSpectrumLeft[i], true);
+      peakCtx.lineTo(x, y);
+    }
+    peakCtx.lineTo(graphRight, centerY);
+    peakCtx.closePath();
+    peakCtx.fillStyle = gradientLeft;
+    peakCtx.fill();
+
+    // Draw left channel line trace
+    peakCtx.beginPath();
+    peakCtx.strokeStyle = 'rgba(150, 255, 150, 0.9)';
+    peakCtx.lineWidth = 1.5 * dpr;
+    for (let i = 0; i < currentSpectrumLeft.length; i++) {
+      const x = graphLeft + (i / (currentSpectrumLeft.length - 1)) * graphWidth;
+      const y = amplitudeToY(currentSpectrumLeft[i], true);
+      if (i === 0) peakCtx.moveTo(x, y);
+      else peakCtx.lineTo(x, y);
+    }
+    peakCtx.stroke();
+
+    // Draw left peak hold line
+    if (peakHoldLeft.length > 0) {
+      peakCtx.beginPath();
+      peakCtx.strokeStyle = 'rgba(200, 255, 200, 0.7)';
+      peakCtx.lineWidth = 1 * dpr;
+      for (let i = 0; i < peakHoldLeft.length; i++) {
+        const x = graphLeft + (i / (peakHoldLeft.length - 1)) * graphWidth;
+        const y = amplitudeToY(peakHoldLeft[i], true);
+        if (i === 0) peakCtx.moveTo(x, y);
+        else peakCtx.lineTo(x, y);
+      }
+      peakCtx.stroke();
+    }
+
+    // --- RIGHT CHANNEL (bottom half) ---
+    // Create gradient for right spectrum fill (cyan/blue tones)
+    const gradientRight = peakCtx.createLinearGradient(0, centerY, 0, graphBottom);
+    gradientRight.addColorStop(0, 'rgba(59, 130, 246, 0.6)');   // Blue at center
+    gradientRight.addColorStop(0.5, 'rgba(100, 180, 255, 0.7)'); // Light blue
+    gradientRight.addColorStop(1, 'rgba(251, 146, 60, 0.8)');    // Orange at bottom (loud)
+
+    // Draw filled right spectrum area
+    peakCtx.beginPath();
+    peakCtx.moveTo(graphLeft, centerY);
+    for (let i = 0; i < currentSpectrumRight.length; i++) {
+      const x = graphLeft + (i / (currentSpectrumRight.length - 1)) * graphWidth;
+      const y = amplitudeToY(currentSpectrumRight[i], false);
+      peakCtx.lineTo(x, y);
+    }
+    peakCtx.lineTo(graphRight, centerY);
+    peakCtx.closePath();
+    peakCtx.fillStyle = gradientRight;
+    peakCtx.fill();
+
+    // Draw right channel line trace
+    peakCtx.beginPath();
+    peakCtx.strokeStyle = 'rgba(150, 200, 255, 0.9)';
+    peakCtx.lineWidth = 1.5 * dpr;
+    for (let i = 0; i < currentSpectrumRight.length; i++) {
+      const x = graphLeft + (i / (currentSpectrumRight.length - 1)) * graphWidth;
+      const y = amplitudeToY(currentSpectrumRight[i], false);
+      if (i === 0) peakCtx.moveTo(x, y);
+      else peakCtx.lineTo(x, y);
+    }
+    peakCtx.stroke();
+
+    // Draw right peak hold line
+    if (peakHoldRight.length > 0) {
+      peakCtx.beginPath();
+      peakCtx.strokeStyle = 'rgba(200, 220, 255, 0.7)';
+      peakCtx.lineWidth = 1 * dpr;
+      for (let i = 0; i < peakHoldRight.length; i++) {
+        const x = graphLeft + (i / (peakHoldRight.length - 1)) * graphWidth;
+        const y = amplitudeToY(peakHoldRight[i], false);
+        if (i === 0) peakCtx.moveTo(x, y);
+        else peakCtx.lineTo(x, y);
+      }
+      peakCtx.stroke();
     }
   }
 
@@ -202,8 +671,17 @@
 
     // Register with centralized render coordinator (high priority for main spectrum)
     renderCoordinator.register(RENDER_ID, () => {
-      renderer?.render(currentSpectrum);
-      drawPeakHold();
+      if (displayMode === 'smoo') {
+        // SMOO mode: Smooth WebGL rendering
+        renderer?.render(currentSpectrumLeft, currentSpectrumRight);
+        drawPeakHold();
+      } else if (displayMode === 'bars') {
+        // BARS mode: Discrete rectangular bars
+        drawBarsMode();
+      } else {
+        // TECH mode: Professional technical display
+        drawTechMode();
+      }
     }, 'high');
 
     return () => {
@@ -214,6 +692,10 @@
   onDestroy(() => {
     unsubStandard();
     unsubMultiRes();
+    unsubLeft();
+    unsubRight();
+    unsubMultiResLeft();
+    unsubMultiResRight();
     unsubState();
     renderCoordinator.unregister(RENDER_ID);
     renderer?.destroy();
@@ -227,9 +709,11 @@
   on:mousemove={handleMouseMove}
   on:mouseleave={handleMouseLeave}
 >
-  <canvas class="webgl-canvas" bind:this={canvas}></canvas>
+  <canvas class="webgl-canvas" class:hidden={displayMode !== 'smoo'} bind:this={canvas}></canvas>
   <canvas class="peak-canvas" bind:this={peakCanvas}></canvas>
-  <ScaleOverlay width={containerWidth} height={containerHeight} {fftMode} />
+  {#if displayMode === 'smoo'}
+    <ScaleOverlay width={containerWidth} height={containerHeight} {fftMode} />
+  {/if}
 
   <!-- Frequency Cursor -->
   {#if cursorVisible && cursorFreq > 0}
@@ -243,6 +727,17 @@
       <span class="cursor-db">{cursorDb > -99 ? cursorDb.toFixed(1) : '---'} dB</span>
     </div>
   {/if}
+
+  <!-- Display Mode Toggle Button -->
+  <button
+    class="display-toggle"
+    on:click={toggleDisplayMode}
+    title="Toggle between BARS (discrete), SMOO (smooth), and TECH (technical) modes"
+    aria-label="Toggle display mode"
+  >
+    <span class="toggle-label">{displayModeLabel}</span>
+    <span class="toggle-indicator" class:smoo-mode={displayMode === 'smoo'} class:tech-mode={displayMode === 'tech'}></span>
+  </button>
 
   <!-- FFT Mode Toggle Button -->
   <button
@@ -282,6 +777,43 @@
     width: 100%;
     height: 100%;
     pointer-events: none;
+  }
+
+  .webgl-canvas.hidden {
+    visibility: hidden;
+  }
+
+  .display-toggle {
+    position: absolute;
+    top: 2px;
+    right: 115px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    background: rgba(30, 35, 50, 0.9);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 4px;
+    color: #a0a0a0;
+    font-size: 10px;
+    font-family: monospace;
+    cursor: pointer;
+    z-index: 20;
+    transition: all 0.15s ease;
+  }
+
+  .display-toggle:hover {
+    background: rgba(40, 50, 70, 0.95);
+    border-color: rgba(139, 92, 246, 0.6);
+    color: #ffffff;
+  }
+
+  .toggle-indicator.smoo-mode {
+    background: #22c55e;
+  }
+
+  .toggle-indicator.tech-mode {
+    background: #8b5cf6;
   }
 
   .fft-toggle {

@@ -117,6 +117,18 @@ export interface ElectronAPI {
     seek: (positionMs: number) => Promise<{ success: boolean; error?: string }>;
     shuffle: (state: boolean) => Promise<{ success: boolean; error?: string }>;
     repeat: (state: 'off' | 'track' | 'context') => Promise<{ success: boolean; error?: string }>;
+    // Configuration
+    getConfig: () => Promise<{
+      configured: boolean;
+      hasClientId: boolean;
+      hasClientSecret: boolean;
+      clientIdPreview: string;
+    }>;
+    saveConfig: (credentials: { clientId: string; clientSecret: string }) => Promise<{
+      success: boolean;
+      configured?: boolean;
+      error?: string;
+    }>;
   };
 }
 

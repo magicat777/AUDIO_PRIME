@@ -31,12 +31,73 @@
     return db >= 0 ? `+${db.toFixed(1)}` : db.toFixed(1);
   }
 
-  // Accordion state for audio sources, modules, layout, and presets (collapsed by default)
+  // Accordion state for audio sources, modules, layout, presets, and spotify (collapsed by default)
   let monitorsExpanded = false;
   let inputsExpanded = false;
   let modulesExpanded = false;
   let layoutExpanded = false;
   let presetsExpanded = false;
+  let spotifySettingsExpanded = false;
+
+  // Spotify settings state
+  let spotifyConfigured = false;
+  let spotifyClientId = '';
+  let spotifyClientSecret = '';
+  let spotifyClientIdPreview = '';
+  let spotifySaving = false;
+  let spotifySaveError = '';
+  let spotifySaveSuccess = false;
+
+  // Load Spotify config on mount
+  async function loadSpotifyConfig() {
+    if (window.electronAPI?.spotify?.getConfig) {
+      const config = await window.electronAPI.spotify.getConfig();
+      spotifyConfigured = config.configured;
+      spotifyClientIdPreview = config.clientIdPreview;
+    }
+  }
+
+  // Save Spotify credentials
+  async function saveSpotifyCredentials() {
+    if (!spotifyClientId.trim() || !spotifyClientSecret.trim()) {
+      spotifySaveError = 'Both Client ID and Client Secret are required';
+      return;
+    }
+
+    spotifySaving = true;
+    spotifySaveError = '';
+    spotifySaveSuccess = false;
+
+    try {
+      const result = await window.electronAPI.spotify.saveConfig({
+        clientId: spotifyClientId.trim(),
+        clientSecret: spotifyClientSecret.trim(),
+      });
+
+      if (result.success) {
+        spotifyConfigured = result.configured ?? false;
+        spotifyClientIdPreview = spotifyClientId.substring(0, 8) + '...';
+        spotifyClientId = '';
+        spotifyClientSecret = '';
+        spotifySaveSuccess = true;
+        // Hide success message after 3 seconds
+        setTimeout(() => { spotifySaveSuccess = false; }, 3000);
+      } else {
+        spotifySaveError = result.error || 'Failed to save credentials';
+      }
+    } catch (err) {
+      spotifySaveError = String(err);
+    } finally {
+      spotifySaving = false;
+    }
+  }
+
+  // Load config when sidebar opens (only on transition to open)
+  let prevOpen = false;
+  $: if (open && !prevOpen) {
+    loadSpotifyConfig();
+  }
+  $: prevOpen = open;
 
   // Check if all panels are locked
   $: allLocked = Object.values($gridLayout.panels).every(p => p.locked);
@@ -514,6 +575,80 @@
                 {/if}
               </button>
             {/if}
+          </div>
+        {/if}
+      </div>
+    </section>
+
+    <section class="section">
+      <h3>Spotify Settings</h3>
+      <div class="accordion-section">
+        <button
+          class="accordion-header"
+          class:expanded={spotifySettingsExpanded}
+          on:click={() => spotifySettingsExpanded = !spotifySettingsExpanded}
+        >
+          <svg class="accordion-icon" width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+            <path d="M4 2l4 4-4 4" stroke="currentColor" stroke-width="2" fill="none"/>
+          </svg>
+          <span class="accordion-title">API Credentials</span>
+          <span class="led-indicator" class:on={spotifyConfigured}></span>
+        </button>
+        {#if spotifySettingsExpanded}
+          <div class="accordion-content spotify-settings">
+            {#if spotifyConfigured}
+              <div class="spotify-status configured">
+                <span class="status-icon">&#10003;</span>
+                <span>Configured</span>
+                <span class="client-id-preview">{spotifyClientIdPreview}</span>
+              </div>
+              <p class="spotify-hint">Enter new credentials to update:</p>
+            {:else}
+              <div class="spotify-status not-configured">
+                <span class="status-icon">!</span>
+                <span>Not configured</span>
+              </div>
+              <p class="spotify-hint">
+                Get credentials from <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">Spotify Developer Dashboard</a>
+              </p>
+            {/if}
+
+            <div class="spotify-form">
+              <label class="spotify-label">
+                Client ID
+                <input
+                  type="text"
+                  bind:value={spotifyClientId}
+                  placeholder="Enter Client ID"
+                  class="spotify-input"
+                />
+              </label>
+              <label class="spotify-label">
+                Client Secret
+                <input
+                  type="password"
+                  bind:value={spotifyClientSecret}
+                  placeholder="Enter Client Secret"
+                  class="spotify-input"
+                />
+              </label>
+
+              {#if spotifySaveError}
+                <div class="spotify-error">{spotifySaveError}</div>
+              {/if}
+
+              {#if spotifySaveSuccess}
+                <div class="spotify-success">Credentials saved successfully!</div>
+              {/if}
+
+              <button
+                class="spotify-save-btn"
+                on:click={saveSpotifyCredentials}
+                disabled={spotifySaving || !spotifyClientId.trim() || !spotifyClientSecret.trim()}
+              >
+                {spotifySaving ? 'Saving...' : 'Save Credentials'}
+              </button>
+            </div>
           </div>
         {/if}
       </div>
@@ -1176,5 +1311,132 @@
     font-size: 0.6rem;
     color: var(--text-muted);
     font-family: monospace;
+  }
+
+  /* Spotify Settings Styles */
+  .spotify-settings {
+    padding: 0.5rem;
+  }
+
+  .spotify-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .spotify-status.configured {
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    color: var(--meter-green);
+  }
+
+  .spotify-status.not-configured {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: var(--meter-red);
+  }
+
+  .spotify-status .status-icon {
+    font-weight: bold;
+  }
+
+  .spotify-status .client-id-preview {
+    margin-left: auto;
+    font-family: monospace;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+  }
+
+  .spotify-hint {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 0.75rem;
+    line-height: 1.4;
+  }
+
+  .spotify-hint a {
+    color: var(--accent-color);
+    text-decoration: none;
+  }
+
+  .spotify-hint a:hover {
+    text-decoration: underline;
+  }
+
+  .spotify-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .spotify-label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+
+  .spotify-input {
+    padding: 0.5rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    font-family: inherit;
+  }
+
+  .spotify-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+  }
+
+  .spotify-input::placeholder {
+    color: var(--text-muted);
+  }
+
+  .spotify-save-btn {
+    padding: 0.5rem 1rem;
+    background: var(--accent-color);
+    border: none;
+    border-radius: 4px;
+    color: white;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    margin-top: 0.25rem;
+  }
+
+  .spotify-save-btn:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+
+  .spotify-save-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .spotify-error {
+    padding: 0.5rem;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 4px;
+    color: var(--meter-red);
+    font-size: 0.75rem;
+  }
+
+  .spotify-success {
+    padding: 0.5rem;
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    border-radius: 4px;
+    color: var(--meter-green);
+    font-size: 0.75rem;
   }
 </style>

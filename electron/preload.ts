@@ -118,6 +118,18 @@ export interface ElectronAPI {
     seek: (positionMs: number) => Promise<{ success: boolean; error?: string }>;
     shuffle: (state: boolean) => Promise<{ success: boolean; error?: string }>;
     repeat: (state: 'off' | 'track' | 'context') => Promise<{ success: boolean; error?: string }>;
+    // Configuration
+    getConfig: () => Promise<{
+      configured: boolean;
+      hasClientId: boolean;
+      hasClientSecret: boolean;
+      clientIdPreview: string;
+    }>;
+    saveConfig: (credentials: { clientId: string; clientSecret: string }) => Promise<{
+      success: boolean;
+      configured?: boolean;
+      error?: string;
+    }>;
   };
 }
 
@@ -186,6 +198,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     seek: (positionMs: number) => ipcRenderer.invoke('spotify:seek', positionMs),
     shuffle: (state: boolean) => ipcRenderer.invoke('spotify:shuffle', state),
     repeat: (state: 'off' | 'track' | 'context') => ipcRenderer.invoke('spotify:repeat', state),
+    // Configuration
+    getConfig: () => ipcRenderer.invoke('spotify:get-config'),
+    saveConfig: (credentials: { clientId: string; clientSecret: string }) =>
+      ipcRenderer.invoke('spotify:save-config', credentials),
   },
 } as ElectronAPI);
 

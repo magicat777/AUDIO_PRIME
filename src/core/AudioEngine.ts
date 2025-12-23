@@ -70,7 +70,11 @@ class AudioEngineClass {
   // Stores
   public state: Writable<AudioState>;
   public spectrum: Writable<Float32Array>;
-  public spectrumMultiRes: Writable<Float32Array>;  // Multi-resolution output
+  public spectrumMultiRes: Writable<Float32Array>;  // Multi-resolution output (mono)
+  public spectrumMultiResLeft: Writable<Float32Array>;   // Multi-resolution Left channel
+  public spectrumMultiResRight: Writable<Float32Array>;  // Multi-resolution Right channel
+  public spectrumLeft: Writable<Float32Array>;      // Left channel spectrum (standard)
+  public spectrumRight: Writable<Float32Array>;     // Right channel spectrum (standard)
   public waveform: Writable<Float32Array>;
   public levels: Writable<{ left: number; right: number; peak: number }>;
   public loudness: Writable<LoudnessData>;
@@ -86,21 +90,34 @@ class AudioEngineClass {
   private multiResWorker: Worker | null = null;
   private audioCleanup: (() => void) | null = null;
   private audioBuffer: Float32Array;
+  private audioBufferLeft: Float32Array;   // Left channel ring buffer
+  private audioBufferRight: Float32Array;  // Right channel ring buffer
   private bufferWritePos = 0;
+  private bufferWritePosLeft = 0;
+  private bufferWritePosRight = 0;
   private samplesSinceLastFFT = 0;
 
   // PERFORMANCE: Pre-allocated buffers to avoid GC pressure
   private stereoSampleBuffer: Float32Array;
   private monoSampleBuffer: Float32Array;
+  private leftSampleBuffer: Float32Array;   // Left channel extraction buffer
+  private rightSampleBuffer: Float32Array;  // Right channel extraction buffer
   private fftInputBuffer: Float32Array;
-  private multiResInputBuffer: Float32Array;
+  private fftInputBufferLeft: Float32Array;   // Left channel FFT input
+  private fftInputBufferRight: Float32Array;  // Right channel FFT input
+  private multiResInputBufferLeft: Float32Array;   // Left channel multi-res input
+  private multiResInputBufferRight: Float32Array;  // Right channel multi-res input
   private waveformBuffer: Float32Array;
 
   // Analysis modules
   private lufsMeter: LUFSMeter;
   private truePeakDetector: TruePeakDetector;
   private spectrumAnalyzer: SpectrumAnalyzer;
+  private spectrumAnalyzerLeft: SpectrumAnalyzer;   // Left channel analyzer
+  private spectrumAnalyzerRight: SpectrumAnalyzer;  // Right channel analyzer
   private multiResAnalyzer: MultiResolutionSpectrumAnalyzer;
+  private multiResAnalyzerLeft: MultiResolutionSpectrumAnalyzer;   // Left channel multi-res
+  private multiResAnalyzerRight: MultiResolutionSpectrumAnalyzer;  // Right channel multi-res
   private beatDetector: BeatDetector;
   private voiceDetector: VoiceDetector;
 
@@ -115,7 +132,11 @@ class AudioEngineClass {
     });
 
     this.spectrum = writable(new Float32Array(512));  // 512 bars output
-    this.spectrumMultiRes = writable(new Float32Array(512));  // Multi-res output
+    this.spectrumMultiRes = writable(new Float32Array(512));  // Multi-res output (mono)
+    this.spectrumMultiResLeft = writable(new Float32Array(512));   // Multi-res Left channel
+    this.spectrumMultiResRight = writable(new Float32Array(512));  // Multi-res Right channel
+    this.spectrumLeft = writable(new Float32Array(512));   // Left channel spectrum (standard)
+    this.spectrumRight = writable(new Float32Array(512));  // Right channel spectrum (standard)
     this.waveform = writable(new Float32Array(1024));
     this.levels = writable({ left: -100, right: -100, peak: -100 });
     this.loudness = writable<LoudnessData>({
@@ -165,19 +186,30 @@ class AudioEngineClass {
 
     // Pre-allocate audio buffer (large enough for max FFT size)
     this.audioBuffer = new Float32Array(FFT_SIZE_MAX * 2);
+    this.audioBufferLeft = new Float32Array(FFT_SIZE_MAX * 2);   // Left channel ring buffer
+    this.audioBufferRight = new Float32Array(FFT_SIZE_MAX * 2);  // Right channel ring buffer
 
     // PERFORMANCE: Pre-allocate processing buffers to avoid per-frame allocations
     this.stereoSampleBuffer = new Float32Array(2048);  // 1024 stereo pairs for goniometer
     this.monoSampleBuffer = new Float32Array(4096);    // Mono conversion buffer
+    this.leftSampleBuffer = new Float32Array(4096);    // Left channel extraction buffer
+    this.rightSampleBuffer = new Float32Array(4096);   // Right channel extraction buffer
     this.fftInputBuffer = new Float32Array(FFT_SIZE);  // Standard FFT input
-    this.multiResInputBuffer = new Float32Array(FFT_SIZE_MAX);  // Multi-res FFT input
+    this.fftInputBufferLeft = new Float32Array(FFT_SIZE);   // Left channel FFT input
+    this.fftInputBufferRight = new Float32Array(FFT_SIZE);  // Right channel FFT input
+    this.multiResInputBufferLeft = new Float32Array(FFT_SIZE_MAX);   // Multi-res FFT input (left)
+    this.multiResInputBufferRight = new Float32Array(FFT_SIZE_MAX);  // Multi-res FFT input (right)
     this.waveformBuffer = new Float32Array(1024);      // Waveform display buffer
 
     // Initialize analysis modules
     this.lufsMeter = new LUFSMeter(SAMPLE_RATE, 2);
     this.truePeakDetector = new TruePeakDetector(SAMPLE_RATE);
     this.spectrumAnalyzer = new SpectrumAnalyzer(512, FFT_SIZE, SAMPLE_RATE);
+    this.spectrumAnalyzerLeft = new SpectrumAnalyzer(512, FFT_SIZE, SAMPLE_RATE);   // Left channel
+    this.spectrumAnalyzerRight = new SpectrumAnalyzer(512, FFT_SIZE, SAMPLE_RATE);  // Right channel
     this.multiResAnalyzer = new MultiResolutionSpectrumAnalyzer(512);
+    this.multiResAnalyzerLeft = new MultiResolutionSpectrumAnalyzer(512);
+    this.multiResAnalyzerRight = new MultiResolutionSpectrumAnalyzer(512);
     this.beatDetector = new BeatDetector(SAMPLE_RATE, FFT_SIZE);
     this.voiceDetector = new VoiceDetector();
   }
@@ -187,6 +219,20 @@ class AudioEngineClass {
    */
   getSpectrumAnalyzer(): SpectrumAnalyzer {
     return this.spectrumAnalyzer;
+  }
+
+  /**
+   * Get left channel spectrum analyzer
+   */
+  getSpectrumAnalyzerLeft(): SpectrumAnalyzer {
+    return this.spectrumAnalyzerLeft;
+  }
+
+  /**
+   * Get right channel spectrum analyzer
+   */
+  getSpectrumAnalyzerRight(): SpectrumAnalyzer {
+    return this.spectrumAnalyzerRight;
   }
 
   /**
@@ -465,11 +511,11 @@ class AudioEngineClass {
       }
 
       self.onmessage = (e) => {
-        const { type, data } = e.data;
+        const { type, data, channel } = e.data;
 
         if (type === 'process') {
           const spectrum = computeFFT(data);
-          self.postMessage({ type: 'spectrum', data: spectrum });
+          self.postMessage({ type: 'spectrum', data: spectrum, channel: channel });
         }
       };
     `;
@@ -479,17 +525,29 @@ class AudioEngineClass {
 
     this.fftWorker.onmessage = (e) => {
       if (e.data.type === 'spectrum') {
-        // Process through perceptual spectrum analyzer
-        const processed = this.spectrumAnalyzer.process(new Float32Array(e.data.data));
-        this.spectrum.set(processed);
+        const channel = e.data.channel;
 
-        // Process beat detection using the spectrum data
-        const beatResult = this.beatDetector.process(processed);
-        this.beatInfo.set(beatResult);
+        if (channel === 'left') {
+          // Process left channel through its analyzer
+          const processed = this.spectrumAnalyzerLeft.process(new Float32Array(e.data.data));
+          this.spectrumLeft.set(processed);
+        } else if (channel === 'right') {
+          // Process right channel through its analyzer
+          const processed = this.spectrumAnalyzerRight.process(new Float32Array(e.data.data));
+          this.spectrumRight.set(processed);
+        } else {
+          // Mono channel (no channel specified) - for beat/voice detection
+          const processed = this.spectrumAnalyzer.process(new Float32Array(e.data.data));
+          this.spectrum.set(processed);
 
-        // Process voice detection using the spectrum data
-        const voiceResult = this.voiceDetector.process(processed);
-        this.voiceInfo.set(voiceResult);
+          // Process beat detection using the mono spectrum data
+          const beatResult = this.beatDetector.process(processed);
+          this.beatInfo.set(beatResult);
+
+          // Process voice detection using the mono spectrum data
+          const voiceResult = this.voiceDetector.process(processed);
+          this.voiceInfo.set(voiceResult);
+        }
       }
     };
   }
@@ -632,7 +690,7 @@ class AudioEngineClass {
       }
 
       self.onmessage = (e) => {
-        const { type, data } = e.data;
+        const { type, data, channel } = e.data;
 
         if (type === 'process') {
           // Compute FFT at each resolution
@@ -658,7 +716,7 @@ class AudioEngineClass {
             high: generateFrequencies(1024, FFT_CONFIGS.high.minFreq, FFT_CONFIGS.high.maxFreq),
           };
 
-          self.postMessage({ type: 'multiResSpectrum', bands, frequencies });
+          self.postMessage({ type: 'multiResSpectrum', bands, frequencies, channel });
         }
       };
     `;
@@ -668,12 +726,23 @@ class AudioEngineClass {
 
     this.multiResWorker.onmessage = (e) => {
       if (e.data.type === 'multiResSpectrum') {
-        // Process through multi-resolution analyzer
-        const processed = this.multiResAnalyzer.process(
-          e.data.bands as MultiResolutionBands,
-          e.data.frequencies as MultiResolutionFrequencies
-        );
-        this.spectrumMultiRes.set(processed);
+        const channel = e.data.channel;
+        const bands = e.data.bands as MultiResolutionBands;
+        const frequencies = e.data.frequencies as MultiResolutionFrequencies;
+
+        if (channel === 'left') {
+          // Process left channel through its multi-res analyzer
+          const processed = this.multiResAnalyzerLeft.process(bands, frequencies);
+          this.spectrumMultiResLeft.set(processed);
+        } else if (channel === 'right') {
+          // Process right channel through its multi-res analyzer
+          const processed = this.multiResAnalyzerRight.process(bands, frequencies);
+          this.spectrumMultiResRight.set(processed);
+        } else {
+          // Mono (no channel specified)
+          const processed = this.multiResAnalyzer.process(bands, frequencies);
+          this.spectrumMultiRes.set(processed);
+        }
       }
     };
   }
@@ -843,23 +912,37 @@ class AudioEngineClass {
       truePeak: truePeakResult.truePeakMax,
     });
 
-    // Mix to mono and add to buffer
-    // PERFORMANCE: Use pre-allocated buffer, resize only if needed
+    // Extract L/R channels and mix to mono
+    // PERFORMANCE: Use pre-allocated buffers, resize only if needed
     const monoLength = samples.length / 2;
     let monoSamples: Float32Array;
+    let leftSamples: Float32Array;
+    let rightSamples: Float32Array;
+
     if (monoLength <= this.monoSampleBuffer.length) {
       monoSamples = this.monoSampleBuffer;
+      leftSamples = this.leftSampleBuffer;
+      rightSamples = this.rightSampleBuffer;
     } else {
       // Rare case: input larger than expected, reallocate
       this.monoSampleBuffer = new Float32Array(monoLength);
+      this.leftSampleBuffer = new Float32Array(monoLength);
+      this.rightSampleBuffer = new Float32Array(monoLength);
       monoSamples = this.monoSampleBuffer;
+      leftSamples = this.leftSampleBuffer;
+      rightSamples = this.rightSampleBuffer;
     }
 
+    // Extract L, R, and mono in single pass
     for (let i = 0; i < monoLength; i++) {
-      monoSamples[i] = (samples[i * 2] + samples[i * 2 + 1]) * 0.5;
+      const left = samples[i * 2];
+      const right = samples[i * 2 + 1];
+      leftSamples[i] = left;
+      rightSamples[i] = right;
+      monoSamples[i] = (left + right) * 0.5;
     }
 
-    // Update waveform using pre-allocated buffer
+    // Update waveform using pre-allocated buffer (mono for display)
     if (monoLength >= 1024) {
       for (let i = 0; i < 1024; i++) {
         this.waveformBuffer[i] = monoSamples[i];
@@ -867,10 +950,19 @@ class AudioEngineClass {
       this.waveform.set(this.waveformBuffer);
     }
 
-    // Accumulate in ring buffer
+    // Accumulate in ring buffers (mono for backward compat, plus L/R for stereo)
     for (let i = 0; i < monoLength; i++) {
+      // Mono buffer (for multi-res and beat detection)
       this.audioBuffer[this.bufferWritePos] = monoSamples[i];
       this.bufferWritePos = (this.bufferWritePos + 1) % this.audioBuffer.length;
+
+      // Left channel buffer
+      this.audioBufferLeft[this.bufferWritePosLeft] = leftSamples[i];
+      this.bufferWritePosLeft = (this.bufferWritePosLeft + 1) % this.audioBufferLeft.length;
+
+      // Right channel buffer
+      this.audioBufferRight[this.bufferWritePosRight] = rightSamples[i];
+      this.bufferWritePosRight = (this.bufferWritePosRight + 1) % this.audioBufferRight.length;
     }
 
     // Track samples and trigger FFT at hop intervals
@@ -878,26 +970,43 @@ class AudioEngineClass {
 
     // Send to FFT workers when we've accumulated enough samples
     while (this.samplesSinceLastFFT >= FFT_HOP_SIZE) {
-      // Standard FFT (4096 samples)
-      // PERFORMANCE: Use pre-allocated buffer
-      const startPos = (this.bufferWritePos - FFT_SIZE + this.audioBuffer.length) % this.audioBuffer.length;
+      // Get current FFT mode
+      const currentFftMode = get(this.state).fftMode;
 
+      // Standard FFT for mono (always needed for beat/voice detection)
+      const startPos = (this.bufferWritePos - FFT_SIZE + this.audioBuffer.length) % this.audioBuffer.length;
       for (let i = 0; i < FFT_SIZE; i++) {
         this.fftInputBuffer[i] = this.audioBuffer[(startPos + i) % this.audioBuffer.length];
       }
-
-      // Note: postMessage will copy the buffer, so reusing is safe
       this.fftWorker?.postMessage({ type: 'process', data: this.fftInputBuffer });
 
-      // Multi-resolution FFT (needs 8192 samples for sub-bass)
-      // PERFORMANCE: Use pre-allocated buffer
-      const multiResStartPos = (this.bufferWritePos - FFT_SIZE_MAX + this.audioBuffer.length) % this.audioBuffer.length;
+      if (currentFftMode === 'standard') {
+        // Standard FFT mode: Process L/R with standard FFT
+        const startPosLeft = (this.bufferWritePosLeft - FFT_SIZE + this.audioBufferLeft.length) % this.audioBufferLeft.length;
+        for (let i = 0; i < FFT_SIZE; i++) {
+          this.fftInputBufferLeft[i] = this.audioBufferLeft[(startPosLeft + i) % this.audioBufferLeft.length];
+        }
+        this.fftWorker?.postMessage({ type: 'process', channel: 'left', data: this.fftInputBufferLeft });
 
-      for (let i = 0; i < FFT_SIZE_MAX; i++) {
-        this.multiResInputBuffer[i] = this.audioBuffer[(multiResStartPos + i) % this.audioBuffer.length];
+        const startPosRight = (this.bufferWritePosRight - FFT_SIZE + this.audioBufferRight.length) % this.audioBufferRight.length;
+        for (let i = 0; i < FFT_SIZE; i++) {
+          this.fftInputBufferRight[i] = this.audioBufferRight[(startPosRight + i) % this.audioBufferRight.length];
+        }
+        this.fftWorker?.postMessage({ type: 'process', channel: 'right', data: this.fftInputBufferRight });
+      } else {
+        // Multi-resolution FFT mode: Process L/R with multi-res FFT
+        const multiResStartPosLeft = (this.bufferWritePosLeft - FFT_SIZE_MAX + this.audioBufferLeft.length) % this.audioBufferLeft.length;
+        for (let i = 0; i < FFT_SIZE_MAX; i++) {
+          this.multiResInputBufferLeft[i] = this.audioBufferLeft[(multiResStartPosLeft + i) % this.audioBufferLeft.length];
+        }
+        this.multiResWorker?.postMessage({ type: 'process', channel: 'left', data: this.multiResInputBufferLeft });
+
+        const multiResStartPosRight = (this.bufferWritePosRight - FFT_SIZE_MAX + this.audioBufferRight.length) % this.audioBufferRight.length;
+        for (let i = 0; i < FFT_SIZE_MAX; i++) {
+          this.multiResInputBufferRight[i] = this.audioBufferRight[(multiResStartPosRight + i) % this.audioBufferRight.length];
+        }
+        this.multiResWorker?.postMessage({ type: 'process', channel: 'right', data: this.multiResInputBufferRight });
       }
-
-      this.multiResWorker?.postMessage({ type: 'process', data: this.multiResInputBuffer });
 
       this.samplesSinceLastFFT -= FFT_HOP_SIZE;
     }

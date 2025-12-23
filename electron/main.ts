@@ -96,7 +96,7 @@ function validateSpotifyConfig(): boolean {
   return true;
 }
 
-const spotifyEnabled = validateSpotifyConfig();
+let spotifyEnabled = validateSpotifyConfig();
 
 // IPC Channels
 const IPC = {
@@ -128,6 +128,8 @@ const IPC = {
   SPOTIFY_SEEK: 'spotify:seek',
   SPOTIFY_SHUFFLE: 'spotify:shuffle',
   SPOTIFY_REPEAT: 'spotify:repeat',
+  SPOTIFY_GET_CONFIG: 'spotify:get-config',
+  SPOTIFY_SAVE_CONFIG: 'spotify:save-config',
 };
 
 /**
@@ -1245,6 +1247,78 @@ ipcMain.handle(IPC.SPOTIFY_SHUFFLE, async (_, state: boolean) => {
 
 ipcMain.handle(IPC.SPOTIFY_REPEAT, async (_, state: 'off' | 'track' | 'context') => {
   return await playbackRepeat(state);
+});
+
+// Get Spotify configuration status (without exposing secrets)
+ipcMain.handle(IPC.SPOTIFY_GET_CONFIG, () => {
+  return {
+    configured: spotifyEnabled,
+    hasClientId: !!SPOTIFY_CONFIG.clientId,
+    hasClientSecret: !!SPOTIFY_CONFIG.clientSecret,
+    // Return masked versions for UI display
+    clientIdPreview: SPOTIFY_CONFIG.clientId
+      ? SPOTIFY_CONFIG.clientId.substring(0, 8) + '...'
+      : '',
+  };
+});
+
+// Save Spotify credentials to user config .env file
+ipcMain.handle(IPC.SPOTIFY_SAVE_CONFIG, async (_, credentials: { clientId: string; clientSecret: string }) => {
+  try {
+    const configDir = join(os.homedir(), '.config', 'audio-prime');
+    const envPath = join(configDir, '.env');
+
+    // Ensure config directory exists
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true });
+    }
+
+    // Read existing .env content if it exists
+    let envContent = '';
+    if (fs.existsSync(envPath)) {
+      envContent = fs.readFileSync(envPath, 'utf-8');
+    }
+
+    // Parse existing env vars
+    const envVars: Record<string, string> = {};
+    for (const line of envContent.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('#')) {
+        const eqIndex = trimmed.indexOf('=');
+        if (eqIndex > 0) {
+          const key = trimmed.substring(0, eqIndex);
+          const value = trimmed.substring(eqIndex + 1);
+          envVars[key] = value;
+        }
+      }
+    }
+
+    // Update Spotify credentials
+    envVars['SPOTIFY_CLIENT_ID'] = credentials.clientId;
+    envVars['SPOTIFY_CLIENT_SECRET'] = credentials.clientSecret;
+
+    // Write back to file
+    const newContent = Object.entries(envVars)
+      .map(([key, value]) => `${key}=${value}`)
+      .join('\n');
+
+    fs.writeFileSync(envPath, newContent + '\n', 'utf-8');
+    console.log('Spotify credentials saved to:', envPath);
+
+    // Update in-memory config
+    SPOTIFY_CONFIG.clientId = credentials.clientId;
+    SPOTIFY_CONFIG.clientSecret = credentials.clientSecret;
+    process.env.SPOTIFY_CLIENT_ID = credentials.clientId;
+    process.env.SPOTIFY_CLIENT_SECRET = credentials.clientSecret;
+
+    // Re-validate and update enabled status
+    spotifyEnabled = validateSpotifyConfig();
+
+    return { success: true, configured: spotifyEnabled };
+  } catch (error) {
+    console.error('Error saving Spotify credentials:', error);
+    return { success: false, error: String(error) };
+  }
 });
 
 // ============================================

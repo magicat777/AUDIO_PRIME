@@ -341,31 +341,38 @@ export class SpectrumRenderer {
     this.updateUniforms();
   }
 
-  render(spectrum: Float32Array): void {
+  render(spectrumLeft: Float32Array, spectrumRight?: Float32Array): void {
     const gl = this.gl;
     const now = performance.now();
     const deltaTime = now - this.lastFrameTime;
     this.lastFrameTime = now;
 
+    // If no right channel provided, use left for both (backward compatibility)
+    const leftSpectrum = spectrumLeft;
+    const rightSpectrum = spectrumRight || spectrumLeft;
+
     // Clear
     gl.clearColor(0.04, 0.04, 0.06, 1.0); // Match --bg-primary
     gl.clear(gl.COLOR_BUFFER_BIT);
 
-    // Spectrum data is now pre-processed with perceptual mapping
-    // Each value is already normalized 0-1 for its corresponding bar
-    const barsToRender = Math.min(this.barCount, spectrum.length);
+    gl.useProgram(this.program);
+    gl.bindVertexArray(this.vao);
 
-    for (let i = 0; i < barsToRender; i++) {
-      // Data is already 0-1 normalized from SpectrumAnalyzer
-      const magnitude = Math.max(0, Math.min(1, spectrum[i]));
+    // Update time uniform
+    gl.uniform1f(this.uniforms.time, now / 1000);
 
-      // Update peak hold - only track meaningful peaks
+    // --- Draw LEFT channel (top half) ---
+    const barsToRenderLeft = Math.min(this.barCount, leftSpectrum.length);
+
+    for (let i = 0; i < barsToRenderLeft; i++) {
+      const magnitude = Math.max(0, Math.min(1, leftSpectrum[i]));
+
+      // Update peak hold for left channel
       const PEAK_THRESHOLD = 0.05;
       if (magnitude > PEAK_THRESHOLD && magnitude > this.peakHold[i]) {
         this.peakHold[i] = magnitude;
         this.peakHoldTime[i] = now;
       } else if (now - this.peakHoldTime[i] > this.PEAK_HOLD_MS) {
-        // Decay peak
         this.peakHold[i] = Math.max(
           0,
           this.peakHold[i] - this.PEAK_DECAY_RATE * (deltaTime / 16.67)
@@ -375,34 +382,37 @@ export class SpectrumRenderer {
       this.instanceData[i * 2 + 1] = magnitude;
     }
 
-    // Zero out any remaining bars if spectrum is smaller
-    for (let i = barsToRender; i < this.barCount; i++) {
+    for (let i = barsToRenderLeft; i < this.barCount; i++) {
       this.instanceData[i * 2 + 1] = 0;
     }
 
-    // Update instance buffer
     gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceBuffer);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.instanceData);
 
-    // Update time uniform
-    gl.uniform1f(this.uniforms.time, now / 1000);
-
-    // Draw bars for both halves (mirrored stereo display)
-    gl.useProgram(this.program);
-    gl.bindVertexArray(this.vao);
-
-    // Draw top half (bars grow upward from center) - 0dB at top
+    // Draw top half (left channel - bars grow upward)
     gl.uniform1f(this.uniforms.mirror, 0.0);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.barCount);
 
-    // Draw bottom half (bars grow downward from center) - mirrored
+    // --- Draw RIGHT channel (bottom half) ---
+    const barsToRenderRight = Math.min(this.barCount, rightSpectrum.length);
+
+    for (let i = 0; i < barsToRenderRight; i++) {
+      const magnitude = Math.max(0, Math.min(1, rightSpectrum[i]));
+      this.instanceData[i * 2 + 1] = magnitude;
+    }
+
+    for (let i = barsToRenderRight; i < this.barCount; i++) {
+      this.instanceData[i * 2 + 1] = 0;
+    }
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceBuffer);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.instanceData);
+
+    // Draw bottom half (right channel - bars grow downward)
     gl.uniform1f(this.uniforms.mirror, 1.0);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.barCount);
 
     gl.bindVertexArray(null);
-
-    // Draw peak hold indicators using 2D canvas overlay
-    // (Peak hold rendering moved to SpectrumPanel component)
   }
 
   /**
