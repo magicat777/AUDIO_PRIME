@@ -242,9 +242,13 @@
       {#if title}
         <span class="panel-title">{title}</span>
       {/if}
-      <button class="close-led" on:click={handleClosePanel} title="Close panel">
-        <span class="led-light"></span>
-      </button>
+      <div class="title-controls">
+        <button class="close-led" on:click={handleClosePanel} title="Close panel">
+          <span class="led-light"></span>
+        </button>
+        <!-- Slot for panel-specific controls (gear menu) -->
+        <slot name="titleControls" />
+      </div>
       <div class="drag-indicator">⋮⋮</div>
     </div>
 
@@ -329,8 +333,14 @@
     text-transform: uppercase;
   }
 
-  .close-led {
+  .title-controls {
     margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .close-led {
     display: flex;
     align-items: center;
     justify-content: center;

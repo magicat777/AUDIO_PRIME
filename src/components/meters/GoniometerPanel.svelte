@@ -4,6 +4,7 @@
   import { audioEngine } from '../../core/AudioEngine';
   import { renderCoordinator } from '../../core/RenderCoordinator';
   import { moduleVisibility } from '../../stores/moduleVisibility';
+  import type { MenuGroup } from '../ui/PanelGearMenu.svelte';
 
   const RENDER_ID = 'goniometer-panel';
 
@@ -15,14 +16,32 @@
   type DisplayMode = 'gonio' | 'vector' | 'polar';
   let displayMode: DisplayMode = 'gonio';
 
-  function toggleDisplayMode() {
-    if (displayMode === 'gonio') {
-      displayMode = 'vector';
-    } else if (displayMode === 'vector') {
-      displayMode = 'polar';
-    } else {
-      displayMode = 'gonio';
+  // Gear menu configuration
+  let gearMenuGroups: MenuGroup[] = [];
+  $: gearMenuGroups = [
+    {
+      id: 'displayMode',
+      label: 'Display',
+      type: 'select',
+      value: displayMode,
+      options: [
+        { value: 'gonio', label: 'GONIO', color: '#8b5cf6' },
+        { value: 'vector', label: 'VECT', color: '#22c55e' },
+        { value: 'polar', label: 'POLAR', color: '#f59e0b' },
+      ],
+    },
+  ];
+
+  export function handleGearMenuChange(event: CustomEvent<{ groupId: string; value: string | boolean }>) {
+    const { groupId, value } = event.detail;
+    if (groupId === 'displayMode') {
+      setDisplayMode(value as DisplayMode);
     }
+  }
+
+  // Allow parent to set display mode
+  export function setDisplayMode(mode: DisplayMode) {
+    displayMode = mode;
     // Clear persistence buffer on mode change for clean transition
     if (persistenceBuffer) {
       persistenceBuffer.data.fill(0);
@@ -30,7 +49,6 @@
   }
 
   // Reactive labels (Svelte needs reactive statements, not functions, for template updates)
-  $: modeLabel = displayMode === 'gonio' ? 'GONIO' : displayMode === 'vector' ? 'VECT' : 'POLAR';
   $: panelTitle = displayMode === 'gonio' ? 'GONIOMETER' : displayMode === 'vector' ? 'VECTORSCOPE' : 'POLAR SCOPE';
 
   // Sync visibility with RenderCoordinator
@@ -339,15 +357,6 @@
 <div class="goniometer-panel" bind:this={container}>
   <div class="panel-header">
     <span class="title">{panelTitle}</span>
-    <button
-      class="mode-toggle"
-      on:click={toggleDisplayMode}
-      title="Toggle between Goniometer, Vectorscope, and Polar display"
-      aria-label="Toggle display mode"
-    >
-      <span class="toggle-label">{modeLabel}</span>
-      <span class="toggle-indicator" class:vector-mode={displayMode === 'vector'} class:polar-mode={displayMode === 'polar'}></span>
-    </button>
   </div>
   <div class="canvas-container">
     <canvas bind:this={canvas} width={canvasSize} height={canvasSize}></canvas>
@@ -383,48 +392,6 @@
     font-weight: 500;
     color: var(--text-secondary);
     letter-spacing: 0.1em;
-  }
-
-  .mode-toggle {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    padding: 2px 6px;
-    background: rgba(30, 35, 45, 0.9);
-    border: 1px solid rgba(139, 92, 246, 0.3);
-    border-radius: 3px;
-    color: #a0a0a0;
-    font-size: 9px;
-    font-family: monospace;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .mode-toggle:hover {
-    background: rgba(40, 50, 70, 0.95);
-    border-color: rgba(139, 92, 246, 0.6);
-    color: #ffffff;
-  }
-
-  .toggle-label {
-    font-weight: 600;
-    letter-spacing: 0.05em;
-  }
-
-  .toggle-indicator {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #8b5cf6;
-    transition: background 0.15s ease;
-  }
-
-  .toggle-indicator.vector-mode {
-    background: #22c55e;
-  }
-
-  .toggle-indicator.polar-mode {
-    background: #f59e0b;
   }
 
   .canvas-container {

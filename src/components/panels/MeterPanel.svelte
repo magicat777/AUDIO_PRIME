@@ -4,6 +4,7 @@
   import { audioEngine } from '../../core/AudioEngine';
   import { renderCoordinator } from '../../core/RenderCoordinator';
   import { moduleVisibility } from '../../stores/moduleVisibility';
+  import type { MenuGroup } from '../ui/PanelGearMenu.svelte';
 
   const RENDER_ID = 'meter-panel';
 
@@ -14,12 +15,32 @@
   type DisplayMode = 'horizontal' | 'vertical';
   let displayMode: DisplayMode = 'horizontal';
 
-  function toggleDisplayMode() {
-    displayMode = displayMode === 'horizontal' ? 'vertical' : 'horizontal';
+  // Gear menu configuration
+  let gearMenuGroups: MenuGroup[] = [];
+  $: gearMenuGroups = [
+    {
+      id: 'displayMode',
+      label: 'Layout',
+      type: 'select',
+      value: displayMode,
+      options: [
+        { value: 'horizontal', label: 'HORIZ', color: '#4a9eff' },
+        { value: 'vertical', label: 'VERT', color: '#22c55e' },
+      ],
+    },
+  ];
+
+  export function handleGearMenuChange(event: CustomEvent<{ groupId: string; value: string | boolean }>) {
+    const { groupId, value } = event.detail;
+    if (groupId === 'displayMode') {
+      displayMode = value as DisplayMode;
+    }
   }
 
-  // Reactive label for toggle button
-  $: modeLabel = displayMode === 'horizontal' ? 'HORIZ' : 'VERT';
+  // Allow parent to set display mode
+  export function setDisplayMode(mode: DisplayMode) {
+    displayMode = mode;
+  }
 
   // Display levels (with VU ballistics applied)
   let leftLevel = -100;
@@ -153,15 +174,6 @@
     <span class="peak-label" class:clipping={displayPeakLevel > -1}>
       PEAK: {displayPeakLevel > -100 ? displayPeakLevel.toFixed(1) : '---'} dB
     </span>
-    <button
-      class="mode-toggle"
-      on:click={toggleDisplayMode}
-      title="Toggle between horizontal and vertical meters"
-      aria-label="Toggle display mode"
-    >
-      <span class="toggle-label">{modeLabel}</span>
-      <span class="toggle-indicator" class:vertical-active={displayMode === 'vertical'}></span>
-    </button>
   </div>
 
   {#if displayMode === 'horizontal'}
@@ -435,45 +447,6 @@
 
   .crest-avg.dynamic {
     color: var(--meter-green);
-  }
-
-  /* Mode Toggle Button */
-  .mode-toggle {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    padding: 2px 6px;
-    background: rgba(30, 35, 45, 0.9);
-    border: 1px solid rgba(139, 92, 246, 0.3);
-    border-radius: 3px;
-    color: #a0a0a0;
-    font-size: 9px;
-    font-family: monospace;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .mode-toggle:hover {
-    background: rgba(40, 50, 70, 0.95);
-    border-color: rgba(139, 92, 246, 0.6);
-    color: #ffffff;
-  }
-
-  .toggle-label {
-    font-weight: 600;
-    letter-spacing: 0.05em;
-  }
-
-  .toggle-indicator {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #8b5cf6;
-    transition: background 0.15s ease;
-  }
-
-  .toggle-indicator.vertical-active {
-    background: #22c55e;
   }
 
   /* Vertical Mode Styles */

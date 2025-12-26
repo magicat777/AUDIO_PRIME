@@ -3,6 +3,7 @@
   import { audioEngine } from '../../core/AudioEngine';
   import { moduleVisibility } from '../../stores/moduleVisibility';
   import { renderCoordinator } from '../../core/RenderCoordinator';
+  import type { MenuGroup } from '../ui/PanelGearMenu.svelte';
 
   const RENDER_ID = 'bass-detail-panel';
 
@@ -17,8 +18,31 @@
   type DisplayMode = 'curve' | 'bars';
   let displayMode: DisplayMode = 'curve';
 
-  function toggleDisplayMode() {
-    displayMode = displayMode === 'curve' ? 'bars' : 'curve';
+  // Gear menu configuration
+  let gearMenuGroups: MenuGroup[] = [];
+  $: gearMenuGroups = [
+    {
+      id: 'displayMode',
+      label: 'Display',
+      type: 'select',
+      value: displayMode,
+      options: [
+        { value: 'curve', label: 'CURVE', color: '#8b5cf6' },
+        { value: 'bars', label: 'BARS', color: '#22c55e' },
+      ],
+    },
+  ];
+
+  export function handleGearMenuChange(event: CustomEvent<{ groupId: string; value: string | boolean }>) {
+    const { groupId, value } = event.detail;
+    if (groupId === 'displayMode') {
+      displayMode = value as DisplayMode;
+    }
+  }
+
+  // Allow parent to set display mode
+  export function setDisplayMode(mode: DisplayMode) {
+    displayMode = mode;
   }
 
   // Number of bars in BARS mode (1/3 octave-ish spacing for bass)
@@ -514,17 +538,6 @@
   >
     <canvas bind:this={canvas}></canvas>
 
-    <!-- Display Mode Toggle -->
-    <button
-      class="mode-toggle"
-      on:click={toggleDisplayMode}
-      title="Toggle between Curve and Bars display"
-      aria-label="Toggle display mode"
-    >
-      <span class="toggle-label">{displayMode === 'curve' ? 'CURVE' : 'BARS'}</span>
-      <span class="toggle-indicator" class:bars-mode={displayMode === 'bars'}></span>
-    </button>
-
     <!-- Frequency Cursor -->
     {#if cursorVisible && cursorFreq > 0}
       <div class="cursor-line" style="left: {cursorX}px;"></div>
@@ -751,48 +764,5 @@
     font-size: 10px;
     font-family: monospace;
     color: var(--text-secondary);
-  }
-
-  /* Display Mode Toggle */
-  .mode-toggle {
-    position: absolute;
-    top: 3px;
-    right: 15px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 2px 8px;
-    background: rgba(30, 35, 45, 0.9);
-    border: 1px solid rgba(139, 92, 246, 0.3);
-    border-radius: 4px;
-    color: #a0a0a0;
-    font-size: 10px;
-    font-family: monospace;
-    cursor: pointer;
-    z-index: 20;
-    transition: all 0.15s ease;
-  }
-
-  .mode-toggle:hover {
-    background: rgba(40, 50, 70, 0.95);
-    border-color: rgba(139, 92, 246, 0.6);
-    color: #ffffff;
-  }
-
-  .toggle-label {
-    font-weight: 600;
-    letter-spacing: 0.05em;
-  }
-
-  .toggle-indicator {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #8b5cf6;
-    transition: background 0.15s ease;
-  }
-
-  .toggle-indicator.bars-mode {
-    background: #22c55e;
   }
 </style>

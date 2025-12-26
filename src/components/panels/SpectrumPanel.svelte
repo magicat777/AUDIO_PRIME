@@ -7,6 +7,7 @@
   import { renderCoordinator } from '../../core/RenderCoordinator';
   import { moduleVisibility } from '../../stores/moduleVisibility';
   import ScaleOverlay from './ScaleOverlay.svelte';
+  import type { MenuGroup } from '../ui/PanelGearMenu.svelte';
 
   const RENDER_ID = 'spectrum-panel';
 
@@ -128,6 +129,68 @@
       return `${size / 1024}K`;
     }
     return String(size);
+  }
+
+  // Gear menu configuration (reactive)
+  let gearMenuGroups: MenuGroup[] = [];
+  $: gearMenuGroups = [
+    {
+      id: 'displayMode',
+      label: 'Display',
+      type: 'select',
+      value: displayMode,
+      options: [
+        { value: 'bars', label: 'BARS', color: '#4a9eff' },
+        { value: 'smoo', label: 'SMOO', color: '#22c55e' },
+        { value: 'tech', label: 'TECH', color: '#8b5cf6' },
+      ],
+    },
+    {
+      id: 'fftMode',
+      label: 'FFT Mode',
+      type: 'select',
+      value: fftMode,
+      options: [
+        { value: 'standard', label: 'STD', color: '#4a9eff' },
+        { value: 'multiResolution', label: 'MR', color: '#22c55e' },
+      ],
+    },
+    {
+      id: 'fftSize',
+      label: 'FFT Size',
+      type: 'select',
+      value: String(fftSize),
+      options: [
+        { value: '512', label: '512', color: '#ef4444' },
+        { value: '1024', label: '1K', color: '#f97316' },
+        { value: '2048', label: '2K', color: '#22c55e' },
+        { value: '4096', label: '4K', color: '#3b82f6' },
+      ],
+    },
+  ];
+
+  // Handle gear menu changes
+  export function handleGearMenuChange(event: CustomEvent<{ groupId: string; value: string | boolean }>) {
+    const { groupId, value } = event.detail;
+
+    switch (groupId) {
+      case 'displayMode':
+        displayMode = value as DisplayMode;
+        break;
+      case 'fftMode':
+        audioEngine.setFFTMode(value as FFTMode);
+        break;
+      case 'fftSize':
+        if (fftMode === 'standard') {
+          audioEngine.setFFTSize(parseInt(value as string) as FFTSize);
+        }
+        break;
+    }
+  }
+
+  // Allow parent to set display mode
+  export function setDisplayMode(mode: DisplayMode) {
+    displayMode = mode;
   }
 
   // Frequency cursor handlers
@@ -777,41 +840,6 @@
     </div>
   {/if}
 
-  <!-- Display Mode Toggle Button -->
-  <button
-    class="display-toggle"
-    on:click={toggleDisplayMode}
-    title="Toggle between BARS (discrete), SMOO (smooth), and TECH (technical) modes"
-    aria-label="Toggle display mode"
-  >
-    <span class="toggle-label">{displayModeLabel}</span>
-    <span class="toggle-indicator" class:smoo-mode={displayMode === 'smoo'} class:tech-mode={displayMode === 'tech'}></span>
-  </button>
-
-  <!-- FFT Mode Toggle Button -->
-  <button
-    class="fft-toggle"
-    on:click={toggleMode}
-    title="Toggle between Standard FFT and Multi-Resolution FFT"
-    aria-label="Toggle FFT mode"
-  >
-    <span class="toggle-label">{fftMode === 'standard' ? 'STD' : 'MR'}</span>
-    <span class="toggle-indicator" class:multi-res={fftMode === 'multiResolution'}></span>
-  </button>
-
-  <!-- FFT Size Toggle Button (only active in standard mode) -->
-  <button
-    class="fft-size-toggle"
-    class:disabled={fftMode !== 'standard'}
-    on:click={cycleFFTSize}
-    title={fftMode === 'standard'
-      ? `FFT Size: ${fftSize} (click to cycle: 512 → 1K → 2K → 4K)`
-      : 'FFT size selection only available in Standard mode'}
-    aria-label="Cycle FFT size"
-  >
-    <span class="toggle-label">{formatFFTSize(fftSize)}</span>
-    <span class="size-indicator" class:size-512={fftSize === 512} class:size-1024={fftSize === 1024} class:size-2048={fftSize === 2048} class:size-4096={fftSize === 4096}></span>
-  </button>
 </div>
 
 <style>
@@ -844,135 +872,6 @@
 
   .webgl-canvas.hidden {
     visibility: hidden;
-  }
-
-  .display-toggle {
-    position: absolute;
-    top: 2px;
-    right: 115px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 2px 8px;
-    background: rgba(30, 35, 50, 0.9);
-    border: 1px solid rgba(139, 92, 246, 0.3);
-    border-radius: 4px;
-    color: #a0a0a0;
-    font-size: 10px;
-    font-family: monospace;
-    cursor: pointer;
-    z-index: 20;
-    transition: all 0.15s ease;
-  }
-
-  .display-toggle:hover {
-    background: rgba(40, 50, 70, 0.95);
-    border-color: rgba(139, 92, 246, 0.6);
-    color: #ffffff;
-  }
-
-  .toggle-indicator.smoo-mode {
-    background: #22c55e;
-  }
-
-  .toggle-indicator.tech-mode {
-    background: #8b5cf6;
-  }
-
-  .fft-toggle {
-    position: absolute;
-    top: 2px;
-    right: 60px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 2px 8px;
-    background: rgba(30, 35, 50, 0.9);
-    border: 1px solid rgba(74, 158, 255, 0.3);
-    border-radius: 4px;
-    color: #a0a0a0;
-    font-size: 10px;
-    font-family: monospace;
-    cursor: pointer;
-    z-index: 20;
-    transition: all 0.15s ease;
-  }
-
-  .fft-toggle:hover {
-    background: rgba(40, 50, 70, 0.95);
-    border-color: rgba(74, 158, 255, 0.6);
-    color: #ffffff;
-  }
-
-  .toggle-label {
-    font-weight: 600;
-    letter-spacing: 0.05em;
-  }
-
-  .toggle-indicator {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #4a9eff;
-    transition: background 0.15s ease;
-  }
-
-  .toggle-indicator.multi-res {
-    background: #22c55e;
-  }
-
-  .fft-size-toggle {
-    position: absolute;
-    top: 2px;
-    right: 5px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 2px 8px;
-    background: rgba(30, 35, 50, 0.9);
-    border: 1px solid rgba(250, 204, 21, 0.3);
-    border-radius: 4px;
-    color: #a0a0a0;
-    font-size: 10px;
-    font-family: monospace;
-    cursor: pointer;
-    z-index: 20;
-    transition: all 0.15s ease;
-  }
-
-  .fft-size-toggle:hover:not(.disabled) {
-    background: rgba(40, 50, 70, 0.95);
-    border-color: rgba(250, 204, 21, 0.6);
-    color: #ffffff;
-  }
-
-  .fft-size-toggle.disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  .size-indicator {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #facc15;
-    transition: background 0.15s ease;
-  }
-
-  .size-indicator.size-512 {
-    background: #ef4444;
-  }
-
-  .size-indicator.size-1024 {
-    background: #f97316;
-  }
-
-  .size-indicator.size-2048 {
-    background: #22c55e;
-  }
-
-  .size-indicator.size-4096 {
-    background: #3b82f6;
   }
 
   /* Frequency Cursor */

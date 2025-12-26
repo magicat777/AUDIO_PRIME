@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { get } from 'svelte/store';
   import Header from './Header.svelte';
   import Sidebar from './Sidebar.svelte';
@@ -18,10 +18,157 @@
   import DebugPanel from '../panels/DebugPanel.svelte';
   import SpotifyPanel from '../spotify/SpotifyPanel.svelte';
   import Visualization3DPanel from '../panels/Visualization3DPanel.svelte';
+  import PanelGearMenu from '../ui/PanelGearMenu.svelte';
   import { audioEngine } from '../../core/AudioEngine';
   import { moduleVisibility } from '../../stores/moduleVisibility';
   import { gridLayout } from '../../stores/gridLayout';
   import { renderCoordinator } from '../../core/RenderCoordinator';
+
+  // Panel component references
+  let spectrumPanelRef: SpectrumPanel;
+  let bassPanelRef: BassDetailPanel;
+  let meterPanelRef: MeterPanel;
+  let goniometerPanelRef: GoniometerPanel;
+
+  // Gear menu state - managed in AppShell, passed to panels
+  import type { FFTMode, FFTSize } from '../../core/AudioEngine';
+
+  // Subscribe to audio engine state for FFT settings
+  let fftMode: FFTMode = 'standard';
+  let fftSize: FFTSize = 4096;
+  const unsubAudioState = audioEngine.state.subscribe((state) => {
+    fftMode = state.fftMode;
+    fftSize = state.fftSize;
+  });
+
+  // Local display mode state for panels
+  let spectrumDisplayMode: 'bars' | 'smoo' | 'tech' = 'bars';
+  let bassDisplayMode: 'curve' | 'bars' = 'curve';
+  let meterDisplayMode: 'horizontal' | 'vertical' = 'horizontal';
+  let goniometerDisplayMode: 'gonio' | 'vector' | 'polar' = 'gonio';
+
+  // Spectrum panel gear menu config
+  $: spectrumGearGroups = [
+    {
+      id: 'displayMode',
+      label: 'Display',
+      type: 'select' as const,
+      value: spectrumDisplayMode,
+      options: [
+        { value: 'bars', label: 'BARS', color: '#4a9eff' },
+        { value: 'smoo', label: 'SMOO', color: '#22c55e' },
+        { value: 'tech', label: 'TECH', color: '#8b5cf6' },
+      ],
+    },
+    {
+      id: 'fftMode',
+      label: 'FFT Mode',
+      type: 'select' as const,
+      value: fftMode,
+      options: [
+        { value: 'standard', label: 'STD', color: '#4a9eff' },
+        { value: 'multiResolution', label: 'MR', color: '#22c55e' },
+      ],
+    },
+    {
+      id: 'fftSize',
+      label: 'FFT Size',
+      type: 'select' as const,
+      value: String(fftSize),
+      options: [
+        { value: '512', label: '512', color: '#ef4444' },
+        { value: '1024', label: '1K', color: '#f97316' },
+        { value: '2048', label: '2K', color: '#22c55e' },
+        { value: '4096', label: '4K', color: '#3b82f6' },
+      ],
+    },
+  ];
+
+  // Bass panel gear menu config
+  $: bassGearGroups = [
+    {
+      id: 'displayMode',
+      label: 'Display',
+      type: 'select' as const,
+      value: bassDisplayMode,
+      options: [
+        { value: 'curve', label: 'CURVE', color: '#8b5cf6' },
+        { value: 'bars', label: 'BARS', color: '#22c55e' },
+      ],
+    },
+  ];
+
+  // Meter panel gear menu config
+  $: meterGearGroups = [
+    {
+      id: 'displayMode',
+      label: 'Layout',
+      type: 'select' as const,
+      value: meterDisplayMode,
+      options: [
+        { value: 'horizontal', label: 'HORIZ', color: '#4a9eff' },
+        { value: 'vertical', label: 'VERT', color: '#22c55e' },
+      ],
+    },
+  ];
+
+  // Goniometer panel gear menu config
+  $: goniometerGearGroups = [
+    {
+      id: 'displayMode',
+      label: 'Display',
+      type: 'select' as const,
+      value: goniometerDisplayMode,
+      options: [
+        { value: 'gonio', label: 'GONIO', color: '#8b5cf6' },
+        { value: 'vector', label: 'VECT', color: '#22c55e' },
+        { value: 'polar', label: 'POLAR', color: '#f59e0b' },
+      ],
+    },
+  ];
+
+  // Gear menu change handlers
+  function handleSpectrumGearChange(e: CustomEvent<{ groupId: string; value: string | boolean }>) {
+    const { groupId, value } = e.detail;
+    switch (groupId) {
+      case 'displayMode':
+        spectrumDisplayMode = value as 'bars' | 'smoo' | 'tech';
+        spectrumPanelRef?.setDisplayMode?.(spectrumDisplayMode);
+        break;
+      case 'fftMode':
+        audioEngine.setFFTMode(value as FFTMode);
+        break;
+      case 'fftSize':
+        if (fftMode === 'standard') {
+          audioEngine.setFFTSize(parseInt(value as string) as FFTSize);
+        }
+        break;
+    }
+  }
+
+  function handleBassGearChange(e: CustomEvent<{ groupId: string; value: string | boolean }>) {
+    const { groupId, value } = e.detail;
+    if (groupId === 'displayMode') {
+      bassDisplayMode = value as 'curve' | 'bars';
+      bassPanelRef?.setDisplayMode?.(bassDisplayMode);
+    }
+  }
+
+  function handleMeterGearChange(e: CustomEvent<{ groupId: string; value: string | boolean }>) {
+    const { groupId, value } = e.detail;
+    if (groupId === 'displayMode') {
+      meterDisplayMode = value as 'horizontal' | 'vertical';
+      meterPanelRef?.setDisplayMode?.(meterDisplayMode);
+    }
+  }
+
+  function handleGoniometerGearChange(e: CustomEvent<{ groupId: string; value: string | boolean }>) {
+    const { groupId, value } = e.detail;
+    if (groupId === 'displayMode') {
+      goniometerDisplayMode = value as 'gonio' | 'vector' | 'polar';
+      goniometerPanelRef?.setDisplayMode?.(goniometerDisplayMode);
+    }
+  }
 
   const RENDER_ID = 'app-shell-lufs';
 
@@ -265,7 +412,7 @@
     gridLayout.autoArrange(visiblePanelIds);
   }
 
-  onMount(() => {
+  onMount(async () => {
     window.addEventListener('keydown', handleKeydown);
     // Register LUFS update with centralized render coordinator
     renderCoordinator.register(RENDER_ID, updateLUFSData, 'low');
@@ -303,6 +450,7 @@
 
   onDestroy(() => {
     renderCoordinator.unregister(RENDER_ID);
+    unsubAudioState();
   });
 </script>
 
@@ -316,14 +464,24 @@
       <!-- Spectrum Analyzer -->
       {#if $moduleVisibility.spectrum}
         <DraggablePanel panelId="spectrum" title="Spectrum">
-          <SpectrumPanel />
+          <SpectrumPanel bind:this={spectrumPanelRef} />
+          <PanelGearMenu
+            slot="titleControls"
+            groups={spectrumGearGroups}
+            on:change={handleSpectrumGearChange}
+          />
         </DraggablePanel>
       {/if}
 
       <!-- Bass Detail -->
       {#if $moduleVisibility.bassDetail}
         <DraggablePanel panelId="bassDetail" title="Bass Detail">
-          <BassDetailPanel />
+          <BassDetailPanel bind:this={bassPanelRef} />
+          <PanelGearMenu
+            slot="titleControls"
+            groups={bassGearGroups}
+            on:change={handleBassGearChange}
+          />
         </DraggablePanel>
       {/if}
 
@@ -331,13 +489,19 @@
       {#if $moduleVisibility.debug}
         <DraggablePanel panelId="debug" title="Debug">
           <DebugPanel />
+          <PanelGearMenu slot="titleControls" groups={[]} />
         </DraggablePanel>
       {/if}
 
       <!-- VU Meters -->
       {#if $moduleVisibility.vuMeters}
         <DraggablePanel panelId="vuMeters" title="VU Meters">
-          <MeterPanel />
+          <MeterPanel bind:this={meterPanelRef} />
+          <PanelGearMenu
+            slot="titleControls"
+            groups={meterGearGroups}
+            on:change={handleMeterGearChange}
+          />
         </DraggablePanel>
       {/if}
 
@@ -351,6 +515,7 @@
             range={displayRange}
             truePeak={displayTruePeak}
           />
+          <PanelGearMenu slot="titleControls" groups={[]} />
         </DraggablePanel>
       {/if}
 
@@ -358,6 +523,7 @@
       {#if $moduleVisibility.bpmTempo}
         <DraggablePanel panelId="bpmTempo" title="BPM/Tempo">
           <BPMPanel />
+          <PanelGearMenu slot="titleControls" groups={[]} />
         </DraggablePanel>
       {/if}
 
@@ -365,6 +531,7 @@
       {#if $moduleVisibility.voiceDetection}
         <DraggablePanel panelId="voiceDetection" title="Voice">
           <VoicePanel />
+          <PanelGearMenu slot="titleControls" groups={[]} />
         </DraggablePanel>
       {/if}
 
@@ -372,6 +539,7 @@
       {#if $moduleVisibility.spotify}
         <DraggablePanel panelId="spotify" title="Spotify">
           <SpotifyPanel />
+          <PanelGearMenu slot="titleControls" groups={[]} />
         </DraggablePanel>
       {/if}
 
@@ -379,13 +547,19 @@
       {#if $moduleVisibility.stereoCorrelation}
         <DraggablePanel panelId="stereoCorrelation" title="Stereo">
           <StereoCorrelationPanel />
+          <PanelGearMenu slot="titleControls" groups={[]} />
         </DraggablePanel>
       {/if}
 
       <!-- Goniometer -->
       {#if $moduleVisibility.goniometer}
         <DraggablePanel panelId="goniometer" title="Goniometer">
-          <GoniometerPanel />
+          <GoniometerPanel bind:this={goniometerPanelRef} />
+          <PanelGearMenu
+            slot="titleControls"
+            groups={goniometerGearGroups}
+            on:change={handleGoniometerGearChange}
+          />
         </DraggablePanel>
       {/if}
 
@@ -393,6 +567,7 @@
       {#if $moduleVisibility.oscilloscope}
         <DraggablePanel panelId="oscilloscope" title="Oscilloscope">
           <OscilloscopePanel />
+          <PanelGearMenu slot="titleControls" groups={[]} />
         </DraggablePanel>
       {/if}
 
@@ -400,6 +575,7 @@
       {#if $moduleVisibility.frequencyBands}
         <DraggablePanel panelId="frequencyBands" title="Frequency Bands">
           <FrequencyBandsPanel />
+          <PanelGearMenu slot="titleControls" groups={[]} />
         </DraggablePanel>
       {/if}
 
@@ -411,6 +587,7 @@
             visibilityKey="cylindricalBars"
             priority="normal"
           />
+          <PanelGearMenu slot="titleControls" groups={[]} />
         </DraggablePanel>
       {/if}
 
@@ -421,6 +598,7 @@
             visibilityKey="waterfall3d"
             priority="normal"
           />
+          <PanelGearMenu slot="titleControls" groups={[]} />
         </DraggablePanel>
       {/if}
 
@@ -431,6 +609,7 @@
             visibilityKey="frequencySphere"
             priority="normal"
           />
+          <PanelGearMenu slot="titleControls" groups={[]} />
         </DraggablePanel>
       {/if}
 
@@ -441,6 +620,7 @@
             visibilityKey="stereoSpace3d"
             priority="normal"
           />
+          <PanelGearMenu slot="titleControls" groups={[]} />
         </DraggablePanel>
       {/if}
 
@@ -451,6 +631,7 @@
             visibilityKey="tunnel"
             priority="normal"
           />
+          <PanelGearMenu slot="titleControls" groups={[]} />
         </DraggablePanel>
       {/if}
 
@@ -461,6 +642,7 @@
             visibilityKey="terrain"
             priority="normal"
           />
+          <PanelGearMenu slot="titleControls" groups={[]} />
         </DraggablePanel>
       {/if}
     </GridLayout>
