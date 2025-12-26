@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { audioEngine } from '../../core/AudioEngine';
-  import type { FFTMode } from '../../core/AudioEngine';
+  import type { FFTMode, FFTSize } from '../../core/AudioEngine';
+  import { FFT_SIZES } from '../../core/AudioEngine';
   import { SpectrumRenderer } from '../../rendering/renderers/SpectrumRenderer';
   import { renderCoordinator } from '../../core/RenderCoordinator';
   import { moduleVisibility } from '../../stores/moduleVisibility';
@@ -21,6 +22,7 @@
   let spectrumMultiResLeft = new Float32Array(512);   // Left channel spectrum (multi-res)
   let spectrumMultiResRight = new Float32Array(512);  // Right channel spectrum (multi-res)
   let fftMode: FFTMode = 'standard';
+  let fftSize: FFTSize = 4096;
   let containerWidth = 0;
   let containerHeight = 0;
 
@@ -92,9 +94,10 @@
     spectrumMultiResRight = data;
   });
 
-  // Subscribe to state for FFT mode
+  // Subscribe to state for FFT mode and size
   const unsubState = audioEngine.state.subscribe((state) => {
     fftMode = state.fftMode;
+    fftSize = state.fftSize;
   });
 
   // Get current spectrum based on mode (mono for cursor display)
@@ -110,6 +113,21 @@
   // Toggle FFT mode
   function toggleMode() {
     audioEngine.toggleFFTMode();
+  }
+
+  // Cycle through FFT sizes (only in standard mode)
+  function cycleFFTSize() {
+    if (fftMode === 'standard') {
+      audioEngine.cycleFFTSize();
+    }
+  }
+
+  // Format FFT size for display
+  function formatFFTSize(size: FFTSize): string {
+    if (size >= 1024) {
+      return `${size / 1024}K`;
+    }
+    return String(size);
   }
 
   // Frequency cursor handlers
@@ -774,11 +792,25 @@
   <button
     class="fft-toggle"
     on:click={toggleMode}
-    title="Toggle between Standard FFT (4096) and Multi-Resolution FFT"
+    title="Toggle between Standard FFT and Multi-Resolution FFT"
     aria-label="Toggle FFT mode"
   >
     <span class="toggle-label">{fftMode === 'standard' ? 'STD' : 'MR'}</span>
     <span class="toggle-indicator" class:multi-res={fftMode === 'multiResolution'}></span>
+  </button>
+
+  <!-- FFT Size Toggle Button (only active in standard mode) -->
+  <button
+    class="fft-size-toggle"
+    class:disabled={fftMode !== 'standard'}
+    on:click={cycleFFTSize}
+    title={fftMode === 'standard'
+      ? `FFT Size: ${fftSize} (click to cycle: 512 → 1K → 2K → 4K)`
+      : 'FFT size selection only available in Standard mode'}
+    aria-label="Cycle FFT size"
+  >
+    <span class="toggle-label">{formatFFTSize(fftSize)}</span>
+    <span class="size-indicator" class:size-512={fftSize === 512} class:size-1024={fftSize === 1024} class:size-2048={fftSize === 2048} class:size-4096={fftSize === 4096}></span>
   </button>
 </div>
 
@@ -887,6 +919,60 @@
 
   .toggle-indicator.multi-res {
     background: #22c55e;
+  }
+
+  .fft-size-toggle {
+    position: absolute;
+    top: 2px;
+    right: 5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    background: rgba(30, 35, 50, 0.9);
+    border: 1px solid rgba(250, 204, 21, 0.3);
+    border-radius: 4px;
+    color: #a0a0a0;
+    font-size: 10px;
+    font-family: monospace;
+    cursor: pointer;
+    z-index: 20;
+    transition: all 0.15s ease;
+  }
+
+  .fft-size-toggle:hover:not(.disabled) {
+    background: rgba(40, 50, 70, 0.95);
+    border-color: rgba(250, 204, 21, 0.6);
+    color: #ffffff;
+  }
+
+  .fft-size-toggle.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .size-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #facc15;
+    transition: background 0.15s ease;
+  }
+
+  .size-indicator.size-512 {
+    background: #ef4444;
+  }
+
+  .size-indicator.size-1024 {
+    background: #f97316;
+  }
+
+  .size-indicator.size-2048 {
+    background: #22c55e;
+  }
+
+  .size-indicator.size-4096 {
+    background: #3b82f6;
   }
 
   /* Frequency Cursor */

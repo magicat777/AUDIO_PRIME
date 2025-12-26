@@ -18,6 +18,8 @@ import type { MultiResolutionBands, MultiResolutionFrequencies } from '../audio/
 
 // Types
 export type FFTMode = 'standard' | 'multiResolution';
+export type FFTSize = 512 | 1024 | 2048 | 4096;
+export const FFT_SIZES: FFTSize[] = [512, 1024, 2048, 4096];
 
 export interface AudioDevice {
   id: string;
@@ -36,6 +38,7 @@ export interface AudioState {
   sampleRate: number;
   bufferSize: number;
   fftMode: FFTMode;
+  fftSize: FFTSize;
 }
 
 export interface SpectrumData {
@@ -62,7 +65,7 @@ export interface StereoAnalysisData {
 
 // Constants
 const SAMPLE_RATE = 48000;
-const FFT_SIZE = 4096;  // Standard FFT size
+const DEFAULT_FFT_SIZE: FFTSize = 4096;  // Default FFT size
 const FFT_SIZE_MAX = 8192;  // Max size for multi-resolution (sub-bass needs this)
 const FFT_HOP_SIZE = 512;  // Process every 512 samples (~10ms) for fast updates
 
@@ -88,6 +91,7 @@ class AudioEngineClass {
   private devices: AudioDevice[] = [];
   private fftWorker: Worker | null = null;
   private multiResWorker: Worker | null = null;
+  private currentFFTSize: FFTSize = DEFAULT_FFT_SIZE;
   private audioCleanup: (() => void) | null = null;
   private audioBuffer: Float32Array;
   private audioBufferLeft: Float32Array;   // Left channel ring buffer
@@ -127,8 +131,9 @@ class AudioEngineClass {
       isCapturing: false,
       currentDevice: null,
       sampleRate: SAMPLE_RATE,
-      bufferSize: FFT_SIZE,
+      bufferSize: DEFAULT_FFT_SIZE,
       fftMode: 'standard',
+      fftSize: DEFAULT_FFT_SIZE,
     });
 
     this.spectrum = writable(new Float32Array(512));  // 512 bars output
@@ -194,9 +199,9 @@ class AudioEngineClass {
     this.monoSampleBuffer = new Float32Array(4096);    // Mono conversion buffer
     this.leftSampleBuffer = new Float32Array(4096);    // Left channel extraction buffer
     this.rightSampleBuffer = new Float32Array(4096);   // Right channel extraction buffer
-    this.fftInputBuffer = new Float32Array(FFT_SIZE);  // Standard FFT input
-    this.fftInputBufferLeft = new Float32Array(FFT_SIZE);   // Left channel FFT input
-    this.fftInputBufferRight = new Float32Array(FFT_SIZE);  // Right channel FFT input
+    this.fftInputBuffer = new Float32Array(FFT_SIZE_MAX);  // Standard FFT input (max size)
+    this.fftInputBufferLeft = new Float32Array(FFT_SIZE_MAX);   // Left channel FFT input
+    this.fftInputBufferRight = new Float32Array(FFT_SIZE_MAX);  // Right channel FFT input
     this.multiResInputBufferLeft = new Float32Array(FFT_SIZE_MAX);   // Multi-res FFT input (left)
     this.multiResInputBufferRight = new Float32Array(FFT_SIZE_MAX);  // Multi-res FFT input (right)
     this.waveformBuffer = new Float32Array(1024);      // Waveform display buffer
@@ -204,13 +209,13 @@ class AudioEngineClass {
     // Initialize analysis modules
     this.lufsMeter = new LUFSMeter(SAMPLE_RATE, 2);
     this.truePeakDetector = new TruePeakDetector(SAMPLE_RATE);
-    this.spectrumAnalyzer = new SpectrumAnalyzer(512, FFT_SIZE, SAMPLE_RATE);
-    this.spectrumAnalyzerLeft = new SpectrumAnalyzer(512, FFT_SIZE, SAMPLE_RATE);   // Left channel
-    this.spectrumAnalyzerRight = new SpectrumAnalyzer(512, FFT_SIZE, SAMPLE_RATE);  // Right channel
+    this.spectrumAnalyzer = new SpectrumAnalyzer(512, this.currentFFTSize, SAMPLE_RATE);
+    this.spectrumAnalyzerLeft = new SpectrumAnalyzer(512, this.currentFFTSize, SAMPLE_RATE);
+    this.spectrumAnalyzerRight = new SpectrumAnalyzer(512, this.currentFFTSize, SAMPLE_RATE);
     this.multiResAnalyzer = new MultiResolutionSpectrumAnalyzer(512);
     this.multiResAnalyzerLeft = new MultiResolutionSpectrumAnalyzer(512);
     this.multiResAnalyzerRight = new MultiResolutionSpectrumAnalyzer(512);
-    this.beatDetector = new BeatDetector(SAMPLE_RATE, FFT_SIZE);
+    this.beatDetector = new BeatDetector(SAMPLE_RATE, this.currentFFTSize);
     this.voiceDetector = new VoiceDetector();
   }
 
@@ -302,6 +307,56 @@ class AudioEngineClass {
     return newMode;
   }
 
+  /**
+   * Get current FFT size
+   */
+  getFFTSize(): FFTSize {
+    return this.currentFFTSize;
+  }
+
+  /**
+   * Set FFT size (512, 1024, 2048, or 4096)
+   * This recreates the FFT worker and spectrum analyzers
+   */
+  setFFTSize(size: FFTSize): void {
+    if (size === this.currentFFTSize) return;
+
+    console.log(`FFT size changing from ${this.currentFFTSize} to ${size}`);
+    this.currentFFTSize = size;
+
+    // Update state
+    this.state.update((s) => ({ ...s, fftSize: size, bufferSize: size }));
+
+    // Recreate spectrum analyzers with new FFT size
+    this.spectrumAnalyzer = new SpectrumAnalyzer(512, size, SAMPLE_RATE);
+    this.spectrumAnalyzerLeft = new SpectrumAnalyzer(512, size, SAMPLE_RATE);
+    this.spectrumAnalyzerRight = new SpectrumAnalyzer(512, size, SAMPLE_RATE);
+
+    // Recreate beat detector with new FFT size
+    this.beatDetector = new BeatDetector(SAMPLE_RATE, size);
+
+    // Terminate old FFT worker and create new one with updated size
+    if (this.fftWorker) {
+      this.fftWorker.terminate();
+      this.fftWorker = null;
+    }
+    this.initFFTWorker();
+
+    console.log(`FFT size changed to: ${size}`);
+  }
+
+  /**
+   * Cycle through FFT sizes: 512 -> 1024 -> 2048 -> 4096 -> 512
+   */
+  cycleFFTSize(): FFTSize {
+    const sizes: FFTSize[] = [512, 1024, 2048, 4096];
+    const currentIndex = sizes.indexOf(this.currentFFTSize);
+    const nextIndex = (currentIndex + 1) % sizes.length;
+    const newSize = sizes[nextIndex];
+    this.setFFTSize(newSize);
+    return newSize;
+  }
+
   async initialize(): Promise<void> {
     // Check for Electron API
     if (!window.electronAPI) {
@@ -341,7 +396,7 @@ class AudioEngineClass {
       const time = performance.now() / 1000;
 
       // Generate synthetic FFT magnitude data (linear scale)
-      const rawFFT = new Float32Array(FFT_SIZE / 2);
+      const rawFFT = new Float32Array(this.currentFFTSize / 2);
       for (let i = 0; i < rawFFT.length; i++) {
         const freq = (i / rawFFT.length) * (SAMPLE_RATE / 2);
         // Simulate bass-heavy spectrum with some variation
@@ -433,9 +488,10 @@ class AudioEngineClass {
   private initFFTWorker(): void {
     // Optimized FFT worker with pre-computed twiddle factors and Blackman-Harris window
     // This provides ~2x speedup over computing sin/cos in the butterfly loop
+    const fftSize = this.currentFFTSize;
     const workerCode = `
       // Optimized FFT Worker for AUDIO_PRIME
-      const FFT_SIZE = ${FFT_SIZE};
+      const FFT_SIZE = ${fftSize};
       const SAMPLE_RATE = ${SAMPLE_RATE};
 
       // Pre-allocate arrays
@@ -970,29 +1026,31 @@ class AudioEngineClass {
 
     // Send to FFT workers when we've accumulated enough samples
     while (this.samplesSinceLastFFT >= FFT_HOP_SIZE) {
-      // Get current FFT mode
+      // Get current FFT mode and size
       const currentFftMode = get(this.state).fftMode;
+      const fftSize = this.currentFFTSize;
 
       // Standard FFT for mono (always needed for beat/voice detection)
-      const startPos = (this.bufferWritePos - FFT_SIZE + this.audioBuffer.length) % this.audioBuffer.length;
-      for (let i = 0; i < FFT_SIZE; i++) {
+      const startPos = (this.bufferWritePos - fftSize + this.audioBuffer.length) % this.audioBuffer.length;
+      for (let i = 0; i < fftSize; i++) {
         this.fftInputBuffer[i] = this.audioBuffer[(startPos + i) % this.audioBuffer.length];
       }
-      this.fftWorker?.postMessage({ type: 'process', data: this.fftInputBuffer });
+      // Send only the needed portion of the buffer
+      this.fftWorker?.postMessage({ type: 'process', data: this.fftInputBuffer.subarray(0, fftSize) });
 
       if (currentFftMode === 'standard') {
         // Standard FFT mode: Process L/R with standard FFT
-        const startPosLeft = (this.bufferWritePosLeft - FFT_SIZE + this.audioBufferLeft.length) % this.audioBufferLeft.length;
-        for (let i = 0; i < FFT_SIZE; i++) {
+        const startPosLeft = (this.bufferWritePosLeft - fftSize + this.audioBufferLeft.length) % this.audioBufferLeft.length;
+        for (let i = 0; i < fftSize; i++) {
           this.fftInputBufferLeft[i] = this.audioBufferLeft[(startPosLeft + i) % this.audioBufferLeft.length];
         }
-        this.fftWorker?.postMessage({ type: 'process', channel: 'left', data: this.fftInputBufferLeft });
+        this.fftWorker?.postMessage({ type: 'process', channel: 'left', data: this.fftInputBufferLeft.subarray(0, fftSize) });
 
-        const startPosRight = (this.bufferWritePosRight - FFT_SIZE + this.audioBufferRight.length) % this.audioBufferRight.length;
-        for (let i = 0; i < FFT_SIZE; i++) {
+        const startPosRight = (this.bufferWritePosRight - fftSize + this.audioBufferRight.length) % this.audioBufferRight.length;
+        for (let i = 0; i < fftSize; i++) {
           this.fftInputBufferRight[i] = this.audioBufferRight[(startPosRight + i) % this.audioBufferRight.length];
         }
-        this.fftWorker?.postMessage({ type: 'process', channel: 'right', data: this.fftInputBufferRight });
+        this.fftWorker?.postMessage({ type: 'process', channel: 'right', data: this.fftInputBufferRight.subarray(0, fftSize) });
       } else {
         // Multi-resolution FFT mode: Process L/R with multi-res FFT
         const multiResStartPosLeft = (this.bufferWritePosLeft - FFT_SIZE_MAX + this.audioBufferLeft.length) % this.audioBufferLeft.length;
