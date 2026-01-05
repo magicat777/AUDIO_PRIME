@@ -248,6 +248,20 @@ class AudioEngineClass {
   }
 
   /**
+   * Get left channel multi-resolution spectrum analyzer
+   */
+  getMultiResAnalyzerLeft(): MultiResolutionSpectrumAnalyzer {
+    return this.multiResAnalyzerLeft;
+  }
+
+  /**
+   * Get right channel multi-resolution spectrum analyzer
+   */
+  getMultiResAnalyzerRight(): MultiResolutionSpectrumAnalyzer {
+    return this.multiResAnalyzerRight;
+  }
+
+  /**
    * Get beat detector
    */
   getBeatDetector(): BeatDetector {

@@ -24,8 +24,7 @@
   import { gridLayout } from '../../stores/gridLayout';
   import { renderCoordinator } from '../../core/RenderCoordinator';
 
-  // Panel component references
-  let spectrumPanelRef: SpectrumPanel;
+  // Panel component references (for panels that need imperative access)
   let bassPanelRef: BassDetailPanel;
   let meterPanelRef: MeterPanel;
   let goniometerPanelRef: GoniometerPanel;
@@ -42,7 +41,7 @@
   });
 
   // Local display mode state for panels
-  let spectrumDisplayMode: 'bars' | 'smoo' | 'tech' = 'bars';
+  let spectrumDisplayMode: 'bars' | 'smoo' | 'tech' | 'octa' = 'bars';
   let bassDisplayMode: 'curve' | 'bars' = 'curve';
   let meterDisplayMode: 'horizontal' | 'vertical' = 'horizontal';
   let goniometerDisplayMode: 'gonio' | 'vector' | 'polar' = 'gonio';
@@ -58,6 +57,7 @@
         { value: 'bars', label: 'BARS', color: '#4a9eff' },
         { value: 'smoo', label: 'SMOO', color: '#22c55e' },
         { value: 'tech', label: 'TECH', color: '#8b5cf6' },
+        { value: 'octa', label: 'OCTA', color: '#f59e0b' },
       ],
     },
     {
@@ -132,8 +132,8 @@
     const { groupId, value } = e.detail;
     switch (groupId) {
       case 'displayMode':
-        spectrumDisplayMode = value as 'bars' | 'smoo' | 'tech';
-        spectrumPanelRef?.setDisplayMode?.(spectrumDisplayMode);
+        spectrumDisplayMode = value as 'bars' | 'smoo' | 'tech' | 'octa';
+        // displayMode is passed as prop to SpectrumPanel, updates automatically
         break;
       case 'fftMode':
         audioEngine.setFFTMode(value as FFTMode);
@@ -464,7 +464,7 @@
       <!-- Spectrum Analyzer -->
       {#if $moduleVisibility.spectrum}
         <DraggablePanel panelId="spectrum" title="Spectrum">
-          <SpectrumPanel bind:this={spectrumPanelRef} />
+          <SpectrumPanel displayMode={spectrumDisplayMode} />
           <PanelGearMenu
             slot="titleControls"
             groups={spectrumGearGroups}

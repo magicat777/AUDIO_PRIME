@@ -7,7 +7,6 @@
   import { renderCoordinator } from '../../core/RenderCoordinator';
   import { moduleVisibility } from '../../stores/moduleVisibility';
   import ScaleOverlay from './ScaleOverlay.svelte';
-  import type { MenuGroup } from '../ui/PanelGearMenu.svelte';
 
   const RENDER_ID = 'spectrum-panel';
 
@@ -27,22 +26,26 @@
   let containerWidth = 0;
   let containerHeight = 0;
 
-  // Display mode: 'bars' (discrete), 'smoo' (smooth WebGL), 'tech' (technical)
-  type DisplayMode = 'bars' | 'smoo' | 'tech';
-  let displayMode: DisplayMode = 'bars';
+  // Display mode: 'bars' (discrete), 'smoo' (smooth WebGL), 'tech' (technical), 'octa' (octave analyzer)
+  export type DisplayMode = 'bars' | 'smoo' | 'tech' | 'octa';
+  export let displayMode: DisplayMode = 'bars';
 
   function toggleDisplayMode() {
     if (displayMode === 'bars') {
       displayMode = 'smoo';
     } else if (displayMode === 'smoo') {
       displayMode = 'tech';
+    } else if (displayMode === 'tech') {
+      displayMode = 'octa';
     } else {
       displayMode = 'bars';
     }
   }
 
   // Get display mode label for toggle button
-  $: displayModeLabel = displayMode === 'bars' ? 'BARS' : displayMode === 'smoo' ? 'SMOO' : 'TECH';
+  $: displayModeLabel = displayMode === 'bars' ? 'BARS' :
+                        displayMode === 'smoo' ? 'SMOO' :
+                        displayMode === 'tech' ? 'TECH' : 'OCTA';
 
   // TECH mode constants
   const TECH_FREQ_LABELS = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
@@ -51,6 +54,37 @@
   const TECH_MAX_DB = 0;
   const TECH_MIN_FREQ = 20;
   const TECH_MAX_FREQ = 20000;
+
+  // OCTA mode constants - Octave frequencies (C notes)
+  const OCTAVE_FREQUENCIES = [
+    { octave: 1, freq: 32.70, label: 'C1' },
+    { octave: 2, freq: 65.41, label: 'C2' },
+    { octave: 3, freq: 130.81, label: 'C3' },
+    { octave: 4, freq: 261.63, label: 'C4' },
+    { octave: 5, freq: 523.25, label: 'C5' },
+    { octave: 6, freq: 1046.50, label: 'C6' },
+    { octave: 7, freq: 2093.00, label: 'C7' },
+    { octave: 8, freq: 4186.01, label: 'C8' },
+    { octave: 9, freq: 8372.02, label: 'C9' },
+  ];
+
+  // Helper to get octave info from frequency
+  function getOctaveInfo(freq: number): { octave: number; noteRange: string } {
+    if (freq <= 0) return { octave: 0, noteRange: 'C0-B0' };
+    for (let i = OCTAVE_FREQUENCIES.length - 1; i >= 0; i--) {
+      if (freq >= OCTAVE_FREQUENCIES[i].freq) {
+        const oct = OCTAVE_FREQUENCIES[i].octave;
+        return {
+          octave: oct,
+          noteRange: `C${oct}-B${oct}`
+        };
+      }
+    }
+    return { octave: 0, noteRange: 'C0-B0' };
+  }
+
+  // Reactive octave info for cursor
+  $: cursorOctaveInfo = getOctaveInfo(cursorFreq);
 
   // Pre-calculate log positions for spectrum bars (512 bars mapped to log frequency)
   const logPositions = new Float32Array(512);
@@ -131,67 +165,7 @@
     return String(size);
   }
 
-  // Gear menu configuration (reactive)
-  let gearMenuGroups: MenuGroup[] = [];
-  $: gearMenuGroups = [
-    {
-      id: 'displayMode',
-      label: 'Display',
-      type: 'select',
-      value: displayMode,
-      options: [
-        { value: 'bars', label: 'BARS', color: '#4a9eff' },
-        { value: 'smoo', label: 'SMOO', color: '#22c55e' },
-        { value: 'tech', label: 'TECH', color: '#8b5cf6' },
-      ],
-    },
-    {
-      id: 'fftMode',
-      label: 'FFT Mode',
-      type: 'select',
-      value: fftMode,
-      options: [
-        { value: 'standard', label: 'STD', color: '#4a9eff' },
-        { value: 'multiResolution', label: 'MR', color: '#22c55e' },
-      ],
-    },
-    {
-      id: 'fftSize',
-      label: 'FFT Size',
-      type: 'select',
-      value: String(fftSize),
-      options: [
-        { value: '512', label: '512', color: '#ef4444' },
-        { value: '1024', label: '1K', color: '#f97316' },
-        { value: '2048', label: '2K', color: '#22c55e' },
-        { value: '4096', label: '4K', color: '#3b82f6' },
-      ],
-    },
-  ];
-
-  // Handle gear menu changes
-  export function handleGearMenuChange(event: CustomEvent<{ groupId: string; value: string | boolean }>) {
-    const { groupId, value } = event.detail;
-
-    switch (groupId) {
-      case 'displayMode':
-        displayMode = value as DisplayMode;
-        break;
-      case 'fftMode':
-        audioEngine.setFFTMode(value as FFTMode);
-        break;
-      case 'fftSize':
-        if (fftMode === 'standard') {
-          audioEngine.setFFTSize(parseInt(value as string) as FFTSize);
-        }
-        break;
-    }
-  }
-
-  // Allow parent to set display mode
-  export function setDisplayMode(mode: DisplayMode) {
-    displayMode = mode;
-  }
+  // Note: Gear menu is managed by AppShell, displayMode is passed as a prop
 
   // Frequency cursor handlers
   function handleMouseMove(event: MouseEvent) {
@@ -256,9 +230,13 @@
   function drawPeakHold() {
     if (!peakCtx) return;
 
-    // Get peak holds from L/R analyzers
-    const peakHoldLeft = audioEngine.getSpectrumAnalyzerLeft().getPeakHolds();
-    const peakHoldRight = audioEngine.getSpectrumAnalyzerRight().getPeakHolds();
+    // Get peak holds from appropriate L/R analyzers based on FFT mode
+    const peakHoldLeft = fftMode === 'multiResolution'
+      ? audioEngine.getMultiResAnalyzerLeft().getPeakHolds()
+      : audioEngine.getSpectrumAnalyzerLeft().getPeakHolds();
+    const peakHoldRight = fftMode === 'multiResolution'
+      ? audioEngine.getMultiResAnalyzerRight().getPeakHolds()
+      : audioEngine.getSpectrumAnalyzerRight().getPeakHolds();
     const barCount = peakHoldLeft.length;
     const width = peakCanvas.width;
     const height = peakCanvas.height;
@@ -635,9 +613,13 @@
       peakCtx.fillText(`${db}`, graphLeft - 5 * dpr, y);
     }
 
-    // Get peak holds for L/R
-    const peakHoldLeft = audioEngine.getSpectrumAnalyzerLeft().getPeakHolds();
-    const peakHoldRight = audioEngine.getSpectrumAnalyzerRight().getPeakHolds();
+    // Get peak holds for L/R based on FFT mode
+    const peakHoldLeft = fftMode === 'multiResolution'
+      ? audioEngine.getMultiResAnalyzerLeft().getPeakHolds()
+      : audioEngine.getSpectrumAnalyzerLeft().getPeakHolds();
+    const peakHoldRight = fftMode === 'multiResolution'
+      ? audioEngine.getMultiResAnalyzerRight().getPeakHolds()
+      : audioEngine.getSpectrumAnalyzerRight().getPeakHolds();
 
     // Helper function to convert amplitude to Y position
     // Amplitude 0-1 maps to -80dB to -10dB (matching ScaleOverlay)
@@ -746,6 +728,212 @@
     }
   }
 
+  // OCTA mode: Overlapping L/R octave analyzer with transparency
+  function drawOctaMode() {
+    if (!peakCtx) return;
+
+    const width = peakCanvas.width;
+    const height = peakCanvas.height;
+    const dpr = window.devicePixelRatio || 1;
+
+    // Margins scaled for DPR
+    const marginLeft = MARGIN_LEFT * dpr;
+    const marginRight = MARGIN_RIGHT * dpr;
+    const marginTop = MARGIN_TOP * dpr;
+    const marginBottom = MARGIN_BOTTOM * dpr;
+
+    const graphLeft = marginLeft;
+    const graphTop = marginTop;
+    const graphWidth = width - marginLeft - marginRight;
+    const graphHeight = height - marginTop - marginBottom;
+    const graphBottom = graphTop + graphHeight;
+    const graphRight = graphLeft + graphWidth;
+
+    // Clear and fill background
+    peakCtx.clearRect(0, 0, width, height);
+    peakCtx.fillStyle = '#0a0c10';
+    peakCtx.fillRect(0, 0, width, height);
+
+    // dB scale labels (full height, not split)
+    const DB_LABELS = [-10, -20, -30, -40, -50, -60, -70, -80];
+
+    // Draw horizontal grid lines (dB)
+    peakCtx.strokeStyle = 'rgba(42, 48, 64, 0.5)';
+    peakCtx.lineWidth = 1 * dpr;
+    for (const db of DB_LABELS) {
+      // Map -10dB to top, -80dB to bottom
+      const normalizedDb = (-10 - db) / 70;
+      const y = graphTop + normalizedDb * graphHeight;
+      peakCtx.beginPath();
+      peakCtx.moveTo(graphLeft, y);
+      peakCtx.lineTo(graphRight, y);
+      peakCtx.stroke();
+    }
+
+    // Draw octave grid lines with labels (amber color)
+    peakCtx.strokeStyle = 'rgba(245, 158, 11, 0.4)';
+    peakCtx.lineWidth = 1.5 * dpr;
+    peakCtx.fillStyle = '#f59e0b';
+    peakCtx.font = `bold ${9 * dpr}px monospace`;
+    peakCtx.textAlign = 'center';
+    peakCtx.textBaseline = 'top';
+
+    for (const octave of OCTAVE_FREQUENCIES) {
+      if (octave.freq >= 20 && octave.freq <= 20000) {
+        const x = graphLeft + (Math.log10(octave.freq / 20) / logRange) * graphWidth;
+        peakCtx.beginPath();
+        peakCtx.moveTo(x, graphTop);
+        peakCtx.lineTo(x, graphBottom);
+        peakCtx.stroke();
+        // Draw octave label at top
+        peakCtx.fillText(octave.label, x, graphTop + 4 * dpr);
+      }
+    }
+
+    // Get peak holds based on FFT mode
+    const peakHoldLeft = fftMode === 'multiResolution'
+      ? audioEngine.getMultiResAnalyzerLeft().getPeakHolds()
+      : audioEngine.getSpectrumAnalyzerLeft().getPeakHolds();
+    const peakHoldRight = fftMode === 'multiResolution'
+      ? audioEngine.getMultiResAnalyzerRight().getPeakHolds()
+      : audioEngine.getSpectrumAnalyzerRight().getPeakHolds();
+
+    // Helper function to convert amplitude to Y position (full height, not split)
+    function amplitudeToY(amplitude: number): number {
+      // amplitude 0 = -80dB (bottom), amplitude 1 = -10dB (top)
+      return graphBottom - amplitude * graphHeight;
+    }
+
+    // --- RIGHT CHANNEL (red, draw first so left overlaps on top) ---
+    // Create gradient for right spectrum fill (red tones)
+    const gradientRight = peakCtx.createLinearGradient(0, graphBottom, 0, graphTop);
+    gradientRight.addColorStop(0, 'rgba(239, 68, 68, 0.1)');    // Red at bottom (quiet)
+    gradientRight.addColorStop(0.5, 'rgba(239, 68, 68, 0.4)');  // Red
+    gradientRight.addColorStop(1, 'rgba(251, 146, 60, 0.6)');   // Orange at top (loud)
+
+    // Draw filled right spectrum area
+    peakCtx.beginPath();
+    peakCtx.moveTo(graphLeft, graphBottom);
+    for (let i = 0; i < currentSpectrumRight.length; i++) {
+      const x = graphLeft + (i / (currentSpectrumRight.length - 1)) * graphWidth;
+      const y = amplitudeToY(currentSpectrumRight[i]);
+      peakCtx.lineTo(x, y);
+    }
+    peakCtx.lineTo(graphRight, graphBottom);
+    peakCtx.closePath();
+    peakCtx.fillStyle = gradientRight;
+    peakCtx.fill();
+
+    // Draw right channel line trace
+    peakCtx.beginPath();
+    peakCtx.strokeStyle = 'rgba(255, 120, 120, 0.9)';
+    peakCtx.lineWidth = 1.5 * dpr;
+    for (let i = 0; i < currentSpectrumRight.length; i++) {
+      const x = graphLeft + (i / (currentSpectrumRight.length - 1)) * graphWidth;
+      const y = amplitudeToY(currentSpectrumRight[i]);
+      if (i === 0) peakCtx.moveTo(x, y);
+      else peakCtx.lineTo(x, y);
+    }
+    peakCtx.stroke();
+
+    // --- LEFT CHANNEL (blue, drawn on top) ---
+    // Create gradient for left spectrum fill (blue tones)
+    const gradientLeft = peakCtx.createLinearGradient(0, graphBottom, 0, graphTop);
+    gradientLeft.addColorStop(0, 'rgba(59, 130, 246, 0.1)');    // Blue at bottom (quiet)
+    gradientLeft.addColorStop(0.5, 'rgba(59, 130, 246, 0.4)');  // Blue
+    gradientLeft.addColorStop(1, 'rgba(34, 211, 238, 0.6)');    // Cyan at top (loud)
+
+    // Draw filled left spectrum area
+    peakCtx.beginPath();
+    peakCtx.moveTo(graphLeft, graphBottom);
+    for (let i = 0; i < currentSpectrumLeft.length; i++) {
+      const x = graphLeft + (i / (currentSpectrumLeft.length - 1)) * graphWidth;
+      const y = amplitudeToY(currentSpectrumLeft[i]);
+      peakCtx.lineTo(x, y);
+    }
+    peakCtx.lineTo(graphRight, graphBottom);
+    peakCtx.closePath();
+    peakCtx.fillStyle = gradientLeft;
+    peakCtx.fill();
+
+    // Draw left channel line trace
+    peakCtx.beginPath();
+    peakCtx.strokeStyle = 'rgba(100, 180, 255, 0.9)';
+    peakCtx.lineWidth = 1.5 * dpr;
+    for (let i = 0; i < currentSpectrumLeft.length; i++) {
+      const x = graphLeft + (i / (currentSpectrumLeft.length - 1)) * graphWidth;
+      const y = amplitudeToY(currentSpectrumLeft[i]);
+      if (i === 0) peakCtx.moveTo(x, y);
+      else peakCtx.lineTo(x, y);
+    }
+    peakCtx.stroke();
+
+    // Draw peak hold lines (white for visibility)
+    // Left peak hold
+    if (peakHoldLeft.length > 0) {
+      peakCtx.beginPath();
+      peakCtx.strokeStyle = 'rgba(100, 180, 255, 0.7)';
+      peakCtx.lineWidth = 1 * dpr;
+      peakCtx.setLineDash([4 * dpr, 4 * dpr]);
+      for (let i = 0; i < peakHoldLeft.length; i++) {
+        const x = graphLeft + (i / (peakHoldLeft.length - 1)) * graphWidth;
+        const y = amplitudeToY(peakHoldLeft[i]);
+        if (i === 0) peakCtx.moveTo(x, y);
+        else peakCtx.lineTo(x, y);
+      }
+      peakCtx.stroke();
+      peakCtx.setLineDash([]);
+    }
+
+    // Right peak hold
+    if (peakHoldRight.length > 0) {
+      peakCtx.beginPath();
+      peakCtx.strokeStyle = 'rgba(255, 120, 120, 0.7)';
+      peakCtx.lineWidth = 1 * dpr;
+      peakCtx.setLineDash([4 * dpr, 4 * dpr]);
+      for (let i = 0; i < peakHoldRight.length; i++) {
+        const x = graphLeft + (i / (peakHoldRight.length - 1)) * graphWidth;
+        const y = amplitudeToY(peakHoldRight[i]);
+        if (i === 0) peakCtx.moveTo(x, y);
+        else peakCtx.lineTo(x, y);
+      }
+      peakCtx.stroke();
+      peakCtx.setLineDash([]);
+    }
+
+    // Draw frequency labels at bottom
+    peakCtx.fillStyle = '#606060';
+    peakCtx.font = `${10 * dpr}px monospace`;
+    peakCtx.textAlign = 'center';
+    peakCtx.textBaseline = 'top';
+    const freqLabels = [20, 50, 100, 200, 500, '1k', '2k', '5k', '10k', '20k'];
+    const freqValues = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+    for (let i = 0; i < freqLabels.length; i++) {
+      const x = graphLeft + (Math.log10(freqValues[i] / 20) / logRange) * graphWidth;
+      peakCtx.fillText(String(freqLabels[i]), x, graphBottom + 5 * dpr);
+    }
+
+    // Draw dB labels on left side
+    peakCtx.fillStyle = '#606060';
+    peakCtx.font = `${10 * dpr}px monospace`;
+    peakCtx.textAlign = 'right';
+    peakCtx.textBaseline = 'middle';
+    for (const db of DB_LABELS) {
+      const normalizedDb = (-10 - db) / 70;
+      const y = graphTop + normalizedDb * graphHeight;
+      peakCtx.fillText(`${db}`, graphLeft - 5 * dpr, y);
+    }
+
+    // Draw L/R legend in top right
+    peakCtx.font = `bold ${10 * dpr}px sans-serif`;
+    peakCtx.textAlign = 'right';
+    peakCtx.textBaseline = 'top';
+    peakCtx.fillStyle = 'rgba(100, 180, 255, 0.9)';
+    peakCtx.fillText('L', graphRight - 20 * dpr, graphTop + 4 * dpr);
+    peakCtx.fillStyle = 'rgba(255, 120, 120, 0.9)';
+    peakCtx.fillText('R', graphRight - 5 * dpr, graphTop + 4 * dpr);
+  }
+
   onMount(() => {
     // Initialize WebGL2 renderer
     const gl = canvas.getContext('webgl2', {
@@ -790,9 +978,12 @@
       } else if (displayMode === 'bars') {
         // BARS mode: Discrete rectangular bars
         drawBarsMode();
-      } else {
+      } else if (displayMode === 'tech') {
         // TECH mode: Professional technical display
         drawTechMode();
+      } else if (displayMode === 'octa') {
+        // OCTA mode: Overlapping L/R octave analyzer
+        drawOctaMode();
       }
     }, 'high');
 
@@ -836,6 +1027,9 @@
       class:flip-left={cursorX > containerWidth - 120}
     >
       <span class="cursor-freq">{formatFreq(cursorFreq)}</span>
+      {#if displayMode === 'octa'}
+        <span class="cursor-octave">Octave {cursorOctaveInfo.octave}: {cursorOctaveInfo.noteRange}</span>
+      {/if}
       <span class="cursor-db">{cursorDb > -99 ? cursorDb.toFixed(1) : '---'} dB</span>
     </div>
   {/if}
@@ -914,6 +1108,13 @@
   .cursor-db {
     font-size: 10px;
     font-family: monospace;
-    color: var(--text-secondary);
+    color: #a0a0a0;
+  }
+
+  .cursor-octave {
+    font-size: 10px;
+    font-family: monospace;
+    font-weight: 600;
+    color: #f59e0b;
   }
 </style>
