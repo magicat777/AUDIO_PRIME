@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { get } from 'svelte/store';
   import { audioEngine } from '../../core/AudioEngine';
   import { renderCoordinator } from '../../core/RenderCoordinator';
   import { moduleVisibility } from '../../stores/moduleVisibility';
@@ -156,9 +155,9 @@
     renderer.setBeatInfo(beatPhase, beatStrength);
 
     // Render the visualization (pass stereo samples for stereoSpace)
+    // Use the already-subscribed stereoSamples variable instead of get() for performance
     if (visualizationType === 'stereoSpace') {
-      const currentStereoSamples = get(audioEngine.stereoSamples);
-      renderer.render(spectrum, deltaTime, currentStereoSamples);
+      renderer.render(spectrum, deltaTime, stereoSamples);
     } else {
       renderer.render(spectrum, deltaTime);
     }

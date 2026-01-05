@@ -19,12 +19,14 @@ const VERTEX_SHADER = `#version 300 es
 precision highp float;
 
 layout(location = 0) in vec3 aPosition;
-layout(location = 1) in float aAge;        // 0 = newest, 1 = oldest
-layout(location = 2) in float aStereoPos;  // -1 = left, 0 = center, 1 = right
+layout(location = 1) in float aFrameIndex;  // Which history frame this point belongs to (0-7)
+layout(location = 2) in float aStereoPos;   // -1 = left, 0 = center, 1 = right
 
 uniform mat4 uMVP;
 uniform float uTime;
 uniform float uPointSize;
+uniform float uCurrentFrame;    // Current frame index (0-7)
+uniform float uHistoryFrames;   // Total history frames
 
 out float vAge;
 out float vStereoPos;
@@ -33,10 +35,13 @@ out vec3 vWorldPos;
 void main() {
   gl_Position = uMVP * vec4(aPosition, 1.0);
 
+  // Calculate age on GPU: how many frames old is this point?
+  float framesOld = mod(uCurrentFrame - aFrameIndex + uHistoryFrames, uHistoryFrames);
+  vAge = framesOld / uHistoryFrames;
+
   // Point size decreases with age
   gl_PointSize = uPointSize * (1.0 - vAge * 0.5);
 
-  vAge = aAge;
   vStereoPos = aStereoPos;
   vWorldPos = aPosition;
 }
@@ -147,6 +152,8 @@ export class StereoSpace3DRenderer extends Base3DRenderer {
     mvp: WebGLUniformLocation | null;
     time: WebGLUniformLocation | null;
     pointSize: WebGLUniformLocation | null;
+    currentFrame: WebGLUniformLocation | null;
+    historyFramesUniform: WebGLUniformLocation | null;
   };
   private lineUniforms: {
     mvp: WebGLUniformLocation | null;
@@ -175,6 +182,8 @@ export class StereoSpace3DRenderer extends Base3DRenderer {
       mvp: gl.getUniformLocation(this.pointProgram, 'uMVP'),
       time: gl.getUniformLocation(this.pointProgram, 'uTime'),
       pointSize: gl.getUniformLocation(this.pointProgram, 'uPointSize'),
+      currentFrame: gl.getUniformLocation(this.pointProgram, 'uCurrentFrame'),
+      historyFramesUniform: gl.getUniformLocation(this.pointProgram, 'uHistoryFrames'),
     };
 
     // Create line shader program
@@ -294,10 +303,6 @@ export class StereoSpace3DRenderer extends Base3DRenderer {
       this.updatePointData(stereoSamples);
     }
 
-    // Upload point data
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.pointBuffer);
-    gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.pointData);
-
     // Draw axes first
     gl.useProgram(this.lineProgram);
     gl.uniformMatrix4fv(this.lineUniforms.mvp, false, this.mvpMatrix);
@@ -310,6 +315,8 @@ export class StereoSpace3DRenderer extends Base3DRenderer {
     gl.uniformMatrix4fv(this.pointUniforms.mvp, false, this.mvpMatrix);
     gl.uniform1f(this.pointUniforms.time, this.time);
     gl.uniform1f(this.pointUniforms.pointSize, 5.0);
+    gl.uniform1f(this.pointUniforms.currentFrame, this.historyIndex);
+    gl.uniform1f(this.pointUniforms.historyFramesUniform, this.historyFrames);
 
     gl.bindVertexArray(this.pointVao);
     gl.drawArrays(gl.POINTS, 0, this.totalPoints);
@@ -317,22 +324,13 @@ export class StereoSpace3DRenderer extends Base3DRenderer {
   }
 
   private updatePointData(stereoSamples: Float32Array): void {
+    const gl = this.gl;
     const s = this.spaceScale;
 
     // Calculate base offset for current history frame
     const frameOffset = this.historyIndex * this.numPoints * 5;
 
-    // Update ages for all existing points
-    for (let frame = 0; frame < this.historyFrames; frame++) {
-      const age = ((this.historyIndex - frame + this.historyFrames) % this.historyFrames) / this.historyFrames;
-      const baseOffset = frame * this.numPoints * 5;
-
-      for (let i = 0; i < this.numPoints; i++) {
-        this.pointData[baseOffset + i * 5 + 3] = age;
-      }
-    }
-
-    // Write new points to current frame slot
+    // Write new points to current frame slot (no age loop needed - computed in shader)
     for (let i = 0; i < this.numPoints; i++) {
       const left = stereoSamples[i * 2];
       const right = stereoSamples[i * 2 + 1];
@@ -353,9 +351,21 @@ export class StereoSpace3DRenderer extends Base3DRenderer {
       this.pointData[offset] = x;
       this.pointData[offset + 1] = y;
       this.pointData[offset + 2] = z;
-      this.pointData[offset + 3] = 0;  // Age = 0 for newest
+      this.pointData[offset + 3] = this.historyIndex;  // Frame index (age computed in shader)
       this.pointData[offset + 4] = stereoPos;
     }
+
+    // Partial buffer upload - only upload the current frame's data (9.6KB vs 76KB)
+    const bytesPerPoint = 5 * 4;  // 5 floats * 4 bytes
+    const frameByteOffset = this.historyIndex * this.numPoints * bytesPerPoint;
+    const frameData = new Float32Array(
+      this.pointData.buffer,
+      frameByteOffset,
+      this.numPoints * 5
+    );
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.pointBuffer);
+    gl.bufferSubData(gl.ARRAY_BUFFER, frameByteOffset, frameData);
 
     // Advance history index
     this.historyIndex = (this.historyIndex + 1) % this.historyFrames;
