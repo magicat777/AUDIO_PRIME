@@ -55,32 +55,36 @@
   const TECH_MIN_FREQ = 20;
   const TECH_MAX_FREQ = 20000;
 
-  // OCTA mode constants - Octave frequencies (C notes)
+  // OCTA mode constants - ISO standard octave band center frequencies
+  // These align with the frequency grid and are standard in audio engineering
   const OCTAVE_FREQUENCIES = [
-    { octave: 1, freq: 32.70, label: 'C1' },
-    { octave: 2, freq: 65.41, label: 'C2' },
-    { octave: 3, freq: 130.81, label: 'C3' },
-    { octave: 4, freq: 261.63, label: 'C4' },
-    { octave: 5, freq: 523.25, label: 'C5' },
-    { octave: 6, freq: 1046.50, label: 'C6' },
-    { octave: 7, freq: 2093.00, label: 'C7' },
-    { octave: 8, freq: 4186.01, label: 'C8' },
-    { octave: 9, freq: 8372.02, label: 'C9' },
+    { octave: 1, freq: 31.5, label: '31.5' },
+    { octave: 2, freq: 63, label: '63' },
+    { octave: 3, freq: 125, label: '125' },
+    { octave: 4, freq: 250, label: '250' },
+    { octave: 5, freq: 500, label: '500' },
+    { octave: 6, freq: 1000, label: '1k' },
+    { octave: 7, freq: 2000, label: '2k' },
+    { octave: 8, freq: 4000, label: '4k' },
+    { octave: 9, freq: 8000, label: '8k' },
+    { octave: 10, freq: 16000, label: '16k' },
   ];
 
-  // Helper to get octave info from frequency
+  // Helper to get octave band info from frequency
   function getOctaveInfo(freq: number): { octave: number; noteRange: string } {
-    if (freq <= 0) return { octave: 0, noteRange: 'C0-B0' };
+    if (freq <= 0) return { octave: 0, noteRange: '16-31 Hz' };
     for (let i = OCTAVE_FREQUENCIES.length - 1; i >= 0; i--) {
       if (freq >= OCTAVE_FREQUENCIES[i].freq) {
-        const oct = OCTAVE_FREQUENCIES[i].octave;
+        const oct = OCTAVE_FREQUENCIES[i];
+        const nextOct = OCTAVE_FREQUENCIES[i + 1];
+        const upperFreq = nextOct ? nextOct.freq : 20000;
         return {
-          octave: oct,
-          noteRange: `C${oct}-B${oct}`
+          octave: oct.octave,
+          noteRange: `${oct.label}-${upperFreq >= 1000 ? (upperFreq/1000) + 'k' : upperFreq} Hz`
         };
       }
     }
-    return { octave: 0, noteRange: 'C0-B0' };
+    return { octave: 0, noteRange: '16-31 Hz' };
   }
 
   // Reactive octave info for cursor
@@ -1028,7 +1032,7 @@
     >
       <span class="cursor-freq">{formatFreq(cursorFreq)}</span>
       {#if displayMode === 'octa'}
-        <span class="cursor-octave">Octave {cursorOctaveInfo.octave}: {cursorOctaveInfo.noteRange}</span>
+        <span class="cursor-octave">Band {cursorOctaveInfo.octave}: {cursorOctaveInfo.noteRange}</span>
       {/if}
       <span class="cursor-db">{cursorDb > -99 ? cursorDb.toFixed(1) : '---'} dB</span>
     </div>
