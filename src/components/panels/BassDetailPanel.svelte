@@ -217,7 +217,7 @@
         const dpr = window.devicePixelRatio || 1;
         canvas.width = width * dpr;
         canvas.height = height * dpr;
-        ctx!.scale(dpr, dpr);
+        ctx?.scale(dpr, dpr);
       }
     });
 

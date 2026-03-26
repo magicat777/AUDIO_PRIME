@@ -31,6 +31,10 @@
   let stereoSamples = new Float32Array(2048);
   let lastFrameTime = 0;
 
+  // WebGL context loss handlers — declared at component scope so onDestroy can access them
+  let handleContextLost: ((e: Event) => void) | null = null;
+  let handleContextRestored: (() => void) | null = null;
+
   // Subscribe to spectrum data
   const unsubSpectrum = audioEngine.spectrum.subscribe((data) => {
     spectrum = data;
@@ -189,13 +193,13 @@
     }
 
     // Handle WebGL context loss and recovery
-    const handleContextLost = (e: Event) => {
+    handleContextLost = (e: Event) => {
       e.preventDefault();
       console.warn(`Visualization3DPanel [${visualizationType}]: WebGL context lost`);
       renderer?.destroy();
       renderer = null;
     };
-    const handleContextRestored = async () => {
+    handleContextRestored = async () => {
       console.log(`Visualization3DPanel [${visualizationType}]: WebGL context restored`);
       gl = canvas.getContext('webgl2', {
         alpha: false,
@@ -231,8 +235,8 @@
   });
 
   onDestroy(() => {
-    canvas?.removeEventListener('webglcontextlost', handleContextLost);
-    canvas?.removeEventListener('webglcontextrestored', handleContextRestored);
+    if (canvas && handleContextLost) canvas.removeEventListener('webglcontextlost', handleContextLost);
+    if (canvas && handleContextRestored) canvas.removeEventListener('webglcontextrestored', handleContextRestored);
     resizeObserver?.disconnect();
     unsubSpectrum();
     unsubStereo?.();

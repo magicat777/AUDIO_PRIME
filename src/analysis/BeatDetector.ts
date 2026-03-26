@@ -17,7 +17,7 @@ const ONSET_ADAPT_RATE = 0.3; // How much threshold rises after detection (was 0
 const MIN_BPM = 60;
 const MAX_BPM = 180;
 const TEMPO_HISTORY_SIZE = 8; // More history for stability
-const CORRELATION_WINDOW = 128; // PERFORMANCE: Only correlate recent ~2 seconds instead of full history
+const CORRELATION_WINDOW = 256; // Correlate recent ~4 seconds for reliable period detection
 
 // Beat tracking parameters
 const BEAT_PREDICT_WINDOW = 0.08; // 80ms window for beat prediction (wider for better alignment)
@@ -72,7 +72,7 @@ export class BeatDetector {
   private tempoHistory: number[] = [];
   private tempoConfidence: number = 0;
   private lastTempoUpdate: number = 0;
-  private readonly TEMPO_UPDATE_INTERVAL = 750; // PERFORMANCE: Reduced frequency (was 500ms)
+  private readonly TEMPO_UPDATE_INTERVAL = 500; // Update tempo every 500ms
 
   // Beat tracking
   private beatPhase: number = 0;
@@ -83,11 +83,11 @@ export class BeatDetector {
 
   // Confidence smoothing and tempo locking
   private smoothedConfidence: number = 0;
-  private readonly CONFIDENCE_SMOOTH_UP = 0.10;   // How fast confidence can rise
+  private readonly CONFIDENCE_SMOOTH_UP = 0.15;   // How fast confidence can rise
   private readonly CONFIDENCE_SMOOTH_DOWN = 0.01; // How fast confidence can fall (very slow)
   private stableTempoCount: number = 0;           // How many updates tempo has been stable
   private lockedBPM: number = 0;                  // BPM when locked
-  private readonly LOCK_THRESHOLD = 0.65;         // Confidence threshold to lock tempo
+  private readonly LOCK_THRESHOLD = 0.55;         // Confidence threshold to lock tempo
   private readonly STABLE_TEMPO_TOLERANCE = 0.05; // 5% tolerance for "stable"
 
   // Frame timing
@@ -152,8 +152,8 @@ export class BeatDetector {
       },
     ];
 
-    // Onset history for autocorrelation (~6 seconds of history at 60fps)
-    this.onsetHistorySize = 512;
+    // Onset history for autocorrelation (~10 seconds of history at 60fps)
+    this.onsetHistorySize = 600;
     this.onsetHistory = new Float32Array(this.onsetHistorySize);
   }
 
@@ -316,18 +316,17 @@ export class BeatDetector {
     let bestLag = 0;
     let bestCorr = 0;
 
-    // PERFORMANCE: Use smaller correlation window and stride=2 to reduce iterations
-    // Before: ~40 lags × ~500 samples = 20,000 ops
-    // After:  ~40 lags × ~64 samples = 2,560 ops (8x reduction)
     const windowSize = Math.min(CORRELATION_WINDOW, this.onsetHistorySize - maxLag);
-    const stride = 2; // Sample every 2nd element
+    const stride = 2; // Sample every 2nd element for performance
+
+    // Store all correlation values to compare harmonics
+    const correlations = new Float32Array(maxLag + 1);
 
     // Calculate autocorrelation for each lag
     for (let lag = minLag; lag <= Math.min(maxLag, this.onsetHistorySize / 2); lag++) {
       let correlation = 0;
       let count = 0;
 
-      // PERFORMANCE: Only correlate recent samples with stride
       for (let i = 0; i < windowSize; i += stride) {
         const idx1 = (this.onsetWritePos - 1 - i + this.onsetHistorySize) % this.onsetHistorySize;
         const idx2 =
@@ -337,18 +336,36 @@ export class BeatDetector {
       }
 
       if (count > 0) {
-        correlation /= count;
+        correlations[lag] = correlation / count;
+      }
+    }
 
-        // Weight towards musically common tempos (90-130 BPM range)
-        const bpmAtLag = (60 * 1000) / (lag * this.frameTimeMs);
-        if (bpmAtLag >= 85 && bpmAtLag <= 135) {
-          correlation *= 1.2;
-        }
+    // Find the best lag, applying harmonic analysis to resolve octave ambiguity
+    for (let lag = minLag; lag <= Math.min(maxLag, this.onsetHistorySize / 2); lag++) {
+      let score = correlations[lag];
+      const bpmAtLag = (60 * 1000) / (lag * this.frameTimeMs);
 
-        if (correlation > bestCorr) {
-          bestCorr = correlation;
-          bestLag = lag;
+      // Weight towards musically common tempos (85-160 BPM range)
+      if (bpmAtLag >= 85 && bpmAtLag <= 160) {
+        score *= 1.15;
+      }
+
+      // Sub-harmonic check: if half this lag (double tempo) also has a strong peak,
+      // prefer the faster tempo — it's likely the true beat rate.
+      // This prevents locking onto every-other-beat for strong rock/pop patterns.
+      const halfLag = Math.round(lag / 2);
+      if (halfLag >= minLag && halfLag <= maxLag) {
+        const halfBPM = (60 * 1000) / (halfLag * this.frameTimeMs);
+        // If the double-tempo peak is at least 60% as strong, it's probably the real beat
+        if (correlations[halfLag] > score * 0.6 && halfBPM >= MIN_BPM && halfBPM <= MAX_BPM) {
+          // Penalize the slower lag — it's likely a sub-harmonic
+          score *= 0.7;
         }
+      }
+
+      if (score > bestCorr) {
+        bestCorr = score;
+        bestLag = lag;
       }
     }
 
@@ -356,20 +373,50 @@ export class BeatDetector {
       const newBPM = (60 * 1000) / (bestLag * this.frameTimeMs);
       if (!Number.isFinite(newBPM)) return;
 
-      // Check for octave errors (double/half tempo)
-      const bpmRatio = newBPM / this.currentBPM;
+      // Use locked BPM for octave correction when confident, otherwise use current median.
+      // This prevents the median from drifting and breaking octave detection.
+      const referenceBPM = (this.lockedBPM > 0 && this.smoothedConfidence > 0.5)
+        ? this.lockedBPM
+        : this.currentBPM;
+
+      const bpmRatio = referenceBPM > 0 ? newBPM / referenceBPM : 1;
       let adjustedBPM = newBPM;
 
       if (bpmRatio > 1.8 && bpmRatio < 2.2) {
-        // Likely double tempo - prefer current
+        // Likely double tempo - halve it
         adjustedBPM = newBPM / 2;
       } else if (bpmRatio > 0.45 && bpmRatio < 0.55) {
-        // Likely half tempo - prefer current
+        // Likely half tempo - double it
         adjustedBPM = newBPM * 2;
+      } else if (bpmRatio > 0.6 && bpmRatio < 0.8) {
+        // In the dead zone (~2/3 tempo) — likely a sub-harmonic that slipped through.
+        // Check if doubling brings it close to the reference.
+        const doubled = newBPM * 2;
+        const doubledRatio = doubled / referenceBPM;
+        if (doubledRatio > 0.85 && doubledRatio < 1.15) {
+          adjustedBPM = doubled;
+        }
+      } else if (bpmRatio > 1.3 && bpmRatio < 1.7) {
+        // In the dead zone (~3/2 tempo) — check if halving brings it close
+        const halved = newBPM / 2;
+        const halvedRatio = halved / referenceBPM;
+        if (halvedRatio > 0.85 && halvedRatio < 1.15) {
+          adjustedBPM = halved;
+        }
       }
 
       // Clamp to valid range
       adjustedBPM = Math.max(MIN_BPM, Math.min(MAX_BPM, adjustedBPM));
+
+      // When tempo is locked with high confidence, reject values that deviate too far
+      // from the locked BPM — they're almost certainly octave/sub-harmonic errors
+      if (this.lockedBPM > 0 && this.smoothedConfidence > 0.6) {
+        const lockDeviation = Math.abs(adjustedBPM - this.lockedBPM) / this.lockedBPM;
+        if (lockDeviation > 0.15) {
+          // More than 15% off the locked tempo — reject this estimate
+          return;
+        }
+      }
 
       // Add to history for smoothing
       this.tempoHistory.push(adjustedBPM);
@@ -377,7 +424,7 @@ export class BeatDetector {
         this.tempoHistory.shift();
       }
 
-      // Median filter for stability (update even with 1 entry)
+      // Median filter for stability
       if (this.tempoHistory.length >= 1) {
         const sorted = [...this.tempoHistory].sort((a, b) => a - b);
         this.currentBPM = sorted[Math.floor(sorted.length / 2)];

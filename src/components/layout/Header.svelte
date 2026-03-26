@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onDestroy } from 'svelte';
   import { audioEngine } from '../../core/AudioEngine';
   import { performanceMonitor } from '../../core/PerformanceMonitor';
 
@@ -13,16 +13,21 @@
   let gpuPercent = 0;
 
   // Subscribe to stores
-  audioEngine.state.subscribe((state) => {
+  const unsubAudioState = audioEngine.state.subscribe((state) => {
     isCapturing = state.isCapturing;
     currentDevice = state.currentDevice?.name || 'No device';
   });
 
-  performanceMonitor.stats.subscribe((stats) => {
+  const unsubPerfStats = performanceMonitor.stats.subscribe((stats) => {
     fps = stats.fps;
     memoryUsage = stats.memoryUsage;
     cpuPercent = stats.cpuPercent;
     gpuPercent = stats.gpuPercent;
+  });
+
+  onDestroy(() => {
+    unsubAudioState();
+    unsubPerfStats();
   });
 
   async function toggleCapture() {

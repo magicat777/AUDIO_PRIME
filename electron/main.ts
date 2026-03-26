@@ -409,7 +409,10 @@ ipcMain.handle(IPC.VISIBILITY_LOAD, async () => {
 
 ipcMain.handle(IPC.PRESET_EXPORT, async (_, presetData: unknown) => {
   try {
-    const result = await dialog.showSaveDialog(mainWindow!, {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false, error: 'Window not available' };
+    }
+    const result = await dialog.showSaveDialog(mainWindow, {
       title: 'Export Layout Preset',
       defaultPath: 'audio-prime-preset.json',
       filters: [{ name: 'JSON Files', extensions: ['json'] }],
@@ -427,7 +430,10 @@ ipcMain.handle(IPC.PRESET_EXPORT, async (_, presetData: unknown) => {
 
 ipcMain.handle(IPC.PRESET_IMPORT, async () => {
   try {
-    const result = await dialog.showOpenDialog(mainWindow!, {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false, error: 'Window not available' };
+    }
+    const result = await dialog.showOpenDialog(mainWindow, {
       title: 'Import Layout Preset',
       filters: [{ name: 'JSON Files', extensions: ['json'] }],
       properties: ['openFile'],
@@ -856,7 +862,6 @@ function generateCodeChallenge(verifier: string): string {
 function loadStoredTokens(): void {
   try {
     const stored = app.getPath('userData');
-    const fs = require('fs');
     const tokenPath = join(stored, 'spotify-tokens.enc');
 
     if (fs.existsSync(tokenPath) && safeStorage.isEncryptionAvailable()) {
@@ -879,7 +884,6 @@ function saveTokens(): void {
     if (!spotifyTokens) return;
 
     const stored = app.getPath('userData');
-    const fs = require('fs');
     const tokenPath = join(stored, 'spotify-tokens.enc');
 
     if (safeStorage.isEncryptionAvailable()) {
@@ -899,7 +903,6 @@ function clearTokens(): void {
   try {
     spotifyTokens = null;
     const stored = app.getPath('userData');
-    const fs = require('fs');
     const tokenPath = join(stored, 'spotify-tokens.enc');
 
     if (fs.existsSync(tokenPath)) {
@@ -916,12 +919,17 @@ function clearTokens(): void {
  */
 async function exchangeCodeForTokens(code: string): Promise<boolean> {
   try {
+    if (!codeVerifier) {
+      console.error('OAuth code verifier missing — auth flow may have been interrupted');
+      return false;
+    }
+
     const params = new URLSearchParams({
       client_id: SPOTIFY_CONFIG.clientId,
       grant_type: 'authorization_code',
       code: code,
       redirect_uri: SPOTIFY_CONFIG.redirectUri,
-      code_verifier: codeVerifier!,
+      code_verifier: codeVerifier,
     });
 
     const response = await fetch(SPOTIFY_CONFIG.tokenUrl, {
@@ -1037,8 +1045,10 @@ function startOAuthServer(): Promise<void> {
         const error = url.searchParams.get('error');
 
         if (error) {
+          // HTML-escape the error parameter to prevent XSS
+          const safeError = error.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
           res.writeHead(400, { 'Content-Type': 'text/html' });
-          res.end(`<html><body><h1>Authentication Failed</h1><p>${error}</p><script>window.close()</script></body></html>`);
+          res.end(`<html><body><h1>Authentication Failed</h1><p>${safeError}</p><script>window.close()</script></body></html>`);
           return;
         }
 
@@ -1532,9 +1542,11 @@ ipcMain.handle(IPC.SPOTIFY_SAVE_CONFIG, async (_, credentials: { clientId: strin
       }
     }
 
-    // Update Spotify credentials
-    envVars['SPOTIFY_CLIENT_ID'] = credentials.clientId;
-    envVars['SPOTIFY_CLIENT_SECRET'] = credentials.clientSecret;
+    // Sanitize credentials — strip newlines, carriage returns, and null bytes
+    // to prevent env var injection via crafted input
+    const sanitize = (s: string) => s.replace(/[\r\n\0]/g, '').trim();
+    envVars['SPOTIFY_CLIENT_ID'] = sanitize(credentials.clientId);
+    envVars['SPOTIFY_CLIENT_SECRET'] = sanitize(credentials.clientSecret);
 
     // Write back to file
     const newContent = Object.entries(envVars)
