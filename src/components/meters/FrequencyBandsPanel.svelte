@@ -121,12 +121,12 @@
   function analyzeBands(spec: Float32Array, now: number): BandInfo[] {
     const bandRanges = displayMode === 'horizontal' ? BAND_RANGES_HORIZONTAL : BAND_RANGES_VERTICAL;
     const barIndices = displayMode === 'horizontal' ? barIndicesHorizontal : barIndicesVertical;
-    const targetBands = displayMode === 'horizontal' ? bandsHorizontal : bandsVertical;
 
-    // PERFORMANCE: Update existing objects instead of creating new ones
+    const result: BandInfo[] = [];
+
     for (let idx = 0; idx < bandRanges.length; idx++) {
       const { start: startBar, end: endBar } = barIndices[idx];
-      const band = targetBands[idx];
+      const range = bandRanges[idx];
 
       let peak = 0;
       let sum = 0;
@@ -149,14 +149,18 @@
         peakHolds[idx] = Math.max(avgPercent, peakHolds[idx] - PEAK_DECAY_RATE * peakHolds[idx]);
       }
 
-      // PERFORMANCE: Mutate existing object instead of creating new one
-      band.peak = peak * 100;
-      band.avg = avgPercent;
-      band.peakHold = peakHolds[idx];
-      band.peakHoldTime = peakHoldTimes[idx];
+      result.push({
+        name: range.name,
+        label: range.label,
+        range: `${range.min}-${range.max}Hz`,
+        peak: peak * 100,
+        avg: avgPercent,
+        peakHold: peakHolds[idx],
+        peakHoldTime: peakHoldTimes[idx],
+      });
     }
 
-    return targetBands;
+    return result;
   }
 
   function findDominantFreq(spec: Float32Array): number {
@@ -179,7 +183,6 @@
     const now = performance.now();
     bands = analyzeBands(data, now);
     dominantFreq = findDominantFreq(data);
-    // PERFORMANCE: Check just a few representative bins instead of .some() over 512
     signalPresent = data[50] > 0.05 || data[150] > 0.05 || data[300] > 0.05;
   });
 
@@ -343,7 +346,6 @@
       var(--meter-yellow) 60%,
       var(--meter-red) 100%
     );
-    transition: width 50ms ease-out;
     border-radius: 2px;
   }
 
@@ -354,7 +356,6 @@
     height: 100%;
     background: #fff;
     transform: translateX(-1px);
-    transition: left 50ms ease-out;
     box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);
   }
 
@@ -413,7 +414,6 @@
       var(--meter-yellow) 60%,
       var(--meter-red) 100%
     );
-    transition: height 50ms ease-out;
     border-radius: 2px;
   }
 
@@ -424,7 +424,6 @@
     height: 2px;
     background: #fff;
     transform: translateY(1px);
-    transition: bottom 50ms ease-out;
     box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);
   }
 
