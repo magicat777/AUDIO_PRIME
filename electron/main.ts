@@ -104,6 +104,7 @@ const IPC = {
   AUDIO_DEVICES: 'audio:devices',
   AUDIO_START: 'audio:start',
   AUDIO_STOP: 'audio:stop',
+  AUDIO_SAMPLE_RATE: 'audio:sample-rate',
   AUDIO_SELECT_DEVICE: 'audio:select-device',
   WINDOW_FULLSCREEN: 'window:fullscreen',
   WINDOW_QUIT: 'window:quit',
@@ -291,6 +292,10 @@ ipcMain.handle(IPC.AUDIO_START, (_, deviceId: string) => {
 ipcMain.handle(IPC.AUDIO_STOP, () => {
   stopAudioCapture();
   return true;
+});
+
+ipcMain.handle(IPC.AUDIO_SAMPLE_RATE, () => {
+  return audioCapture?.getSampleRate() ?? 0;
 });
 
 ipcMain.handle(IPC.WINDOW_FULLSCREEN, () => {

@@ -17,6 +17,11 @@ export class LinuxCapture implements AudioCapture {
   private errorCallback: AudioErrorCallback | null = null;
   private closeCallback: AudioCloseCallback | null = null;
 
+  // Dynamic sample rate — detected from the active sink before capture starts
+  private currentSampleRate: number = 0;
+  private static readonly DEFAULT_SAMPLE_RATE = 48000;
+  private static readonly SUPPORTED_RATES = [44100, 48000, 88200, 96000, 176400, 192000];
+
   // Auto-reconnect state
   private activeDeviceId: string | null = null;
   private intentionalStop = false;
@@ -107,6 +112,54 @@ export class LinuxCapture implements AudioCapture {
     }
   }
 
+  /**
+   * Detect the sample rate of the sink that a source (monitor) is attached to.
+   * For monitor sources, queries the parent sink. Falls back to source's own rate.
+   */
+  private async detectSampleRate(deviceId: string): Promise<number> {
+    try {
+      // If this is a monitor source, get the parent sink's rate
+      if (deviceId.includes('.monitor')) {
+        const sinkName = deviceId.replace('.monitor', '');
+        const { stdout } = await execAsync(`pactl list sinks 2>/dev/null`);
+        const blocks = stdout.split('Sink #');
+        for (const block of blocks) {
+          if (block.includes(`Name: ${sinkName}`)) {
+            const specMatch = block.match(/Sample Specification:\s*\S+\s+\d+ch\s+(\d+)Hz/);
+            if (specMatch) {
+              const rate = parseInt(specMatch[1], 10);
+              if (LinuxCapture.SUPPORTED_RATES.includes(rate)) {
+                console.log(`Detected sink sample rate: ${rate} Hz for ${sinkName}`);
+                return rate;
+              }
+            }
+          }
+        }
+      }
+
+      // Fallback: query the source itself
+      const { stdout } = await execAsync(`pactl list sources 2>/dev/null`);
+      const blocks = stdout.split('Source #');
+      for (const block of blocks) {
+        if (block.includes(`Name: ${deviceId}`)) {
+          const specMatch = block.match(/Sample Specification:\s*\S+\s+\d+ch\s+(\d+)Hz/);
+          if (specMatch) {
+            const rate = parseInt(specMatch[1], 10);
+            if (LinuxCapture.SUPPORTED_RATES.includes(rate)) {
+              console.log(`Detected source sample rate: ${rate} Hz`);
+              return rate;
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error detecting sample rate:', error);
+    }
+
+    console.log(`Using default sample rate: ${LinuxCapture.DEFAULT_SAMPLE_RATE} Hz`);
+    return LinuxCapture.DEFAULT_SAMPLE_RATE;
+  }
+
   start(deviceId: string): void {
     // Stop any existing capture
     this.intentionalStop = false;
@@ -115,19 +168,27 @@ export class LinuxCapture implements AudioCapture {
 
     this.activeDeviceId = deviceId;
     this.reconnectAttempts = 0;
-    this.spawnParec(deviceId);
+
+    // Detect sample rate then start capture
+    this.detectSampleRate(deviceId).then((rate) => {
+      if (this.intentionalStop) return; // User stopped before detection completed
+      this.currentSampleRate = rate;
+      this.spawnParec(deviceId);
+    });
   }
 
   private spawnParec(deviceId: string): void {
+    const rate = this.currentSampleRate || LinuxCapture.DEFAULT_SAMPLE_RATE;
     try {
       this.process = spawn('parec', [
         '--device', deviceId,
-        '--rate', '48000',
+        '--rate', String(rate),
         '--channels', '2',
         '--format', 'float32le',
         '--raw',
         '--latency-msec', '10',
       ]);
+      console.log(`parec started at ${rate} Hz on ${deviceId}`);
     } catch (error) {
       const msg = `Failed to spawn parec: ${error}`;
       console.error(msg);
@@ -239,6 +300,10 @@ export class LinuxCapture implements AudioCapture {
     this.cancelReconnect();
     this.stopInternal();
     this.activeDeviceId = null;
+  }
+
+  getSampleRate(): number {
+    return this.currentSampleRate;
   }
 
   isCapturing(): boolean {

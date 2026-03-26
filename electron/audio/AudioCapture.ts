@@ -32,8 +32,14 @@ export interface AudioCapture {
   isCapturing(): boolean;
 
   /**
+   * Get the sample rate being used for capture.
+   * Returns 0 if not yet started or unknown.
+   */
+  getSampleRate(): number;
+
+  /**
    * Register callback for audio data
-   * @param callback - Receives Float32Array of audio samples (48kHz, stereo, interleaved)
+   * @param callback - Receives Float32Array of audio samples (stereo, interleaved)
    */
   onData(callback: AudioDataCallback): void;
 

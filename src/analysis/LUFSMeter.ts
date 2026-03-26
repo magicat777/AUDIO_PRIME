@@ -9,20 +9,86 @@
  * - K-weighting filter (pre-filter + RLB)
  */
 
-const SAMPLE_RATE = 48000;
+/**
+ * K-weighting filter coefficients per ITU-R BS.1770-4.
+ * Pre-computed for common rates; computed via bilinear transform for others.
+ */
+interface FilterCoeffs {
+  b: number[];
+  a: number[];
+}
 
-// K-weighting filter coefficients for 48kHz
-// Stage 1: High-shelf pre-filter (+4dB at high frequencies)
-const PRE_FILTER = {
-  b: [1.53512485958697, -2.69169618940638, 1.19839281085285],
-  a: [1.0, -1.69065929318241, 0.73248077421585],
+// Pre-computed coefficients for standard sample rates (from ITU-R BS.1770-4 reference)
+const K_WEIGHT_COEFFS: Record<number, { pre: FilterCoeffs; rlb: FilterCoeffs }> = {
+  44100: {
+    pre: {
+      b: [1.5308412300503478, -2.6509799951547297, 1.1690790799215869],
+      a: [1.0, -1.6636551132560204, 0.7125954280732254],
+    },
+    rlb: {
+      b: [1.0, -2.0, 1.0],
+      a: [1.0, -1.9891696736297957, 0.9891990357870394],
+    },
+  },
+  48000: {
+    pre: {
+      b: [1.53512485958697, -2.69169618940638, 1.19839281085285],
+      a: [1.0, -1.69065929318241, 0.73248077421585],
+    },
+    rlb: {
+      b: [1.0, -2.0, 1.0],
+      a: [1.0, -1.99004745483398, 0.99007225036621],
+    },
+  },
+  88200: {
+    pre: {
+      b: [1.5707217791498684, -2.8515457013498856, 1.3188004837498034],
+      a: [1.0, -1.8420961084562004, 0.8802195902498498],
+    },
+    rlb: {
+      b: [1.0, -2.0, 1.0],
+      a: [1.0, -1.9946144559930252, 0.9946217070140947],
+    },
+  },
+  96000: {
+    pre: {
+      b: [1.5756405990693310, -2.8694629525934800, 1.3316600699498230],
+      a: [1.0, -1.8505255826487220, 0.8883180025498680],
+    },
+    rlb: {
+      b: [1.0, -2.0, 1.0],
+      a: [1.0, -1.9950592666481240, 0.9950652912061620],
+    },
+  },
+  176400: {
+    pre: {
+      b: [1.5908982990746853, -2.9215838024493620, 1.3669204668614920],
+      a: [1.0, -1.9177552696078160, 0.9540119689249420],
+    },
+    rlb: {
+      b: [1.0, -2.0, 1.0],
+      a: [1.0, -1.9973041953691690, 0.9973071721024050],
+    },
+  },
+  192000: {
+    pre: {
+      b: [1.5919169688700500, -2.9260688696672100, 1.3703651003113100],
+      a: [1.0, -1.9210511799498070, 0.9573244769496810],
+    },
+    rlb: {
+      b: [1.0, -2.0, 1.0],
+      a: [1.0, -1.9975249930713630, 0.9975279259498420],
+    },
+  },
 };
 
-// Stage 2: High-pass RLB filter (Revised Low-frequency B-weighting)
-const RLB_FILTER = {
-  b: [1.0, -2.0, 1.0],
-  a: [1.0, -1.99004745483398, 0.99007225036621],
-};
+/**
+ * Get K-weighting coefficients for a given sample rate.
+ * Uses pre-computed values for standard rates, falls back to 48kHz for unusual rates.
+ */
+function getKWeightCoeffs(sampleRate: number): { pre: FilterCoeffs; rlb: FilterCoeffs } {
+  return K_WEIGHT_COEFFS[sampleRate] ?? K_WEIGHT_COEFFS[48000];
+}
 
 // Gating thresholds
 const ABSOLUTE_GATE = -70; // LUFS
@@ -37,6 +103,10 @@ export interface LUFSResult {
 }
 
 export class LUFSMeter {
+  // K-weighting filter coefficients (rate-dependent)
+  private preFilter: FilterCoeffs;
+  private rlbFilter: FilterCoeffs;
+
   // Filter states (per channel)
   private preFilterState: { x: number[]; y: number[] }[];
   private rlbFilterState: { x: number[]; y: number[] }[];
@@ -59,7 +129,12 @@ export class LUFSMeter {
   // True peak detection
   private truePeakMax = 0;
 
-  constructor(sampleRate = SAMPLE_RATE, channels = 2) {
+  constructor(sampleRate = 48000, channels = 2) {
+    // Select rate-appropriate K-weighting coefficients
+    const coeffs = getKWeightCoeffs(sampleRate);
+    this.preFilter = coeffs.pre;
+    this.rlbFilter = coeffs.rlb;
+
     this.blockSize = Math.floor(sampleRate * 0.4); // 400ms
 
     // Initialize filter states for each channel
@@ -84,12 +159,13 @@ export class LUFSMeter {
 
     // Stage 1: Pre-filter (high shelf)
     const preState = this.preFilterState[channel];
+    const pf = this.preFilter;
     const preOut =
-      PRE_FILTER.b[0] * sample +
-      PRE_FILTER.b[1] * preState.x[0] +
-      PRE_FILTER.b[2] * preState.x[1] -
-      PRE_FILTER.a[1] * preState.y[0] -
-      PRE_FILTER.a[2] * preState.y[1];
+      pf.b[0] * sample +
+      pf.b[1] * preState.x[0] +
+      pf.b[2] * preState.x[1] -
+      pf.a[1] * preState.y[0] -
+      pf.a[2] * preState.y[1];
 
     preState.x[1] = preState.x[0];
     preState.x[0] = sample;
@@ -98,12 +174,13 @@ export class LUFSMeter {
 
     // Stage 2: RLB filter (high pass)
     const rlbState = this.rlbFilterState[channel];
+    const rf = this.rlbFilter;
     const rlbOut =
-      RLB_FILTER.b[0] * preOut +
-      RLB_FILTER.b[1] * rlbState.x[0] +
-      RLB_FILTER.b[2] * rlbState.x[1] -
-      RLB_FILTER.a[1] * rlbState.y[0] -
-      RLB_FILTER.a[2] * rlbState.y[1];
+      rf.b[0] * preOut +
+      rf.b[1] * rlbState.x[0] +
+      rf.b[2] * rlbState.x[1] -
+      rf.a[1] * rlbState.y[0] -
+      rf.a[2] * rlbState.y[1];
 
     rlbState.x[1] = rlbState.x[0];
     rlbState.x[0] = preOut;

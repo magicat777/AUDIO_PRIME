@@ -100,6 +100,7 @@ export interface ElectronAPI {
     getDevices: () => Promise<AudioDevice[]>;
     start: (deviceId: string) => Promise<boolean>;
     stop: () => Promise<boolean>;
+    getSampleRate: () => Promise<number>;
     onData: (callback: (samples: number[]) => void) => () => void;
   };
   window: {

@@ -64,7 +64,7 @@ export interface StereoAnalysisData {
 }
 
 // Constants
-const SAMPLE_RATE = 48000;
+const DEFAULT_SAMPLE_RATE = 48000;
 const DEFAULT_FFT_SIZE: FFTSize = 4096;  // Default FFT size
 const FFT_SIZE_MAX = 8192;  // Max size for multi-resolution (sub-bass needs this)
 const FFT_HOP_SIZE = 512;  // Process every 512 samples (~10ms) for fast updates
@@ -92,6 +92,7 @@ class AudioEngineClass {
   private fftWorker: Worker | null = null;
   private multiResWorker: Worker | null = null;
   private currentFFTSize: FFTSize = DEFAULT_FFT_SIZE;
+  private currentSampleRate: number = DEFAULT_SAMPLE_RATE;
   private audioCleanup: (() => void) | null = null;
   private audioBuffer: Float32Array;
   private audioBufferLeft: Float32Array;   // Left channel ring buffer
@@ -130,7 +131,7 @@ class AudioEngineClass {
     this.state = writable<AudioState>({
       isCapturing: false,
       currentDevice: null,
-      sampleRate: SAMPLE_RATE,
+      sampleRate: this.currentSampleRate,
       bufferSize: DEFAULT_FFT_SIZE,
       fftMode: 'standard',
       fftSize: DEFAULT_FFT_SIZE,
@@ -206,17 +207,46 @@ class AudioEngineClass {
     this.multiResInputBufferRight = new Float32Array(FFT_SIZE_MAX);  // Multi-res FFT input (right)
     this.waveformBuffer = new Float32Array(1024);      // Waveform display buffer
 
-    // Initialize analysis modules
-    this.lufsMeter = new LUFSMeter(SAMPLE_RATE, 2);
-    this.truePeakDetector = new TruePeakDetector(SAMPLE_RATE);
-    this.spectrumAnalyzer = new SpectrumAnalyzer(512, this.currentFFTSize, SAMPLE_RATE);
-    this.spectrumAnalyzerLeft = new SpectrumAnalyzer(512, this.currentFFTSize, SAMPLE_RATE);
-    this.spectrumAnalyzerRight = new SpectrumAnalyzer(512, this.currentFFTSize, SAMPLE_RATE);
+    // Initialize analysis modules with default sample rate
+    // These get re-initialized when actual capture rate is detected
+    this.lufsMeter = new LUFSMeter(this.currentSampleRate, 2);
+    this.truePeakDetector = new TruePeakDetector(this.currentSampleRate);
+    this.spectrumAnalyzer = new SpectrumAnalyzer(512, this.currentFFTSize, this.currentSampleRate);
+    this.spectrumAnalyzerLeft = new SpectrumAnalyzer(512, this.currentFFTSize, this.currentSampleRate);
+    this.spectrumAnalyzerRight = new SpectrumAnalyzer(512, this.currentFFTSize, this.currentSampleRate);
     this.multiResAnalyzer = new MultiResolutionSpectrumAnalyzer(512);
     this.multiResAnalyzerLeft = new MultiResolutionSpectrumAnalyzer(512);
     this.multiResAnalyzerRight = new MultiResolutionSpectrumAnalyzer(512);
-    this.beatDetector = new BeatDetector(SAMPLE_RATE, this.currentFFTSize);
+    this.beatDetector = new BeatDetector(this.currentSampleRate, this.currentFFTSize);
     this.voiceDetector = new VoiceDetector();
+  }
+
+  /**
+   * Re-initialize all analysis modules and FFT workers for a new sample rate.
+   * Called when the capture device's sample rate differs from the current one.
+   */
+  private reinitializeForSampleRate(newRate: number): void {
+    if (newRate === this.currentSampleRate || newRate <= 0) return;
+
+    console.log(`Sample rate changed: ${this.currentSampleRate} → ${newRate} Hz`);
+    this.currentSampleRate = newRate;
+
+    // Update state store
+    this.state.update(s => ({ ...s, sampleRate: newRate }));
+
+    // Re-create analysis modules with new rate
+    this.lufsMeter = new LUFSMeter(newRate, 2);
+    this.truePeakDetector = new TruePeakDetector(newRate);
+    this.spectrumAnalyzer = new SpectrumAnalyzer(512, this.currentFFTSize, newRate);
+    this.spectrumAnalyzerLeft = new SpectrumAnalyzer(512, this.currentFFTSize, newRate);
+    this.spectrumAnalyzerRight = new SpectrumAnalyzer(512, this.currentFFTSize, newRate);
+    this.beatDetector = new BeatDetector(newRate, this.currentFFTSize);
+
+    // Re-create FFT workers with new sample rate baked in
+    this.initFFTWorker();
+    this.initMultiResWorker();
+
+    console.log(`Analysis pipeline re-initialized for ${newRate} Hz`);
   }
 
   /**
@@ -342,12 +372,12 @@ class AudioEngineClass {
     this.state.update((s) => ({ ...s, fftSize: size, bufferSize: size }));
 
     // Recreate spectrum analyzers with new FFT size
-    this.spectrumAnalyzer = new SpectrumAnalyzer(512, size, SAMPLE_RATE);
-    this.spectrumAnalyzerLeft = new SpectrumAnalyzer(512, size, SAMPLE_RATE);
-    this.spectrumAnalyzerRight = new SpectrumAnalyzer(512, size, SAMPLE_RATE);
+    this.spectrumAnalyzer = new SpectrumAnalyzer(512, size, this.currentSampleRate);
+    this.spectrumAnalyzerLeft = new SpectrumAnalyzer(512, size, this.currentSampleRate);
+    this.spectrumAnalyzerRight = new SpectrumAnalyzer(512, size, this.currentSampleRate);
 
     // Recreate beat detector with new FFT size
-    this.beatDetector = new BeatDetector(SAMPLE_RATE, size);
+    this.beatDetector = new BeatDetector(this.currentSampleRate, size);
 
     // Recreate FFT worker with updated size (old one terminated inside init)
     this.initFFTWorker();
@@ -408,7 +438,7 @@ class AudioEngineClass {
       // Generate synthetic FFT magnitude data (linear scale)
       const rawFFT = new Float32Array(this.currentFFTSize / 2);
       for (let i = 0; i < rawFFT.length; i++) {
-        const freq = (i / rawFFT.length) * (SAMPLE_RATE / 2);
+        const freq = (i / rawFFT.length) * (this.currentSampleRate / 2);
         // Simulate bass-heavy spectrum with some variation
         const bassBump = Math.exp(-freq / 100) * 0.5;
         const midPresence = Math.exp(-Math.pow((freq - 1000) / 500, 2)) * 0.3;
@@ -508,7 +538,7 @@ class AudioEngineClass {
     const workerCode = `
       // Optimized FFT Worker for AUDIO_PRIME
       const FFT_SIZE = ${fftSize};
-      const SAMPLE_RATE = ${SAMPLE_RATE};
+      const SAMPLE_RATE = ${this.currentSampleRate};
 
       // Pre-allocate arrays
       const windowFunc = new Float32Array(FFT_SIZE);
@@ -634,7 +664,7 @@ class AudioEngineClass {
     // Multi-resolution FFT worker - uses different FFT sizes per frequency band
     // Sub-bass (8192), Bass (4096), Mids (2048), Highs (1024)
     const workerCode = `
-      const SAMPLE_RATE = ${SAMPLE_RATE};
+      const SAMPLE_RATE = ${this.currentSampleRate};
 
       // FFT configurations per band
       const FFT_CONFIGS = {
@@ -841,7 +871,7 @@ class AudioEngineClass {
       this.processAudioData(new Float32Array(samples));
     });
 
-    // Start capture
+    // Start capture (LinuxCapture detects sample rate async before spawning parec)
     await window.electronAPI.audio.start(targetDevice.id);
 
     this.state.update((s) => ({
@@ -849,6 +879,19 @@ class AudioEngineClass {
       isCapturing: true,
       currentDevice: targetDevice,
     }));
+
+    // Poll for the detected sample rate — LinuxCapture detects it async
+    // Give it a moment to detect, then re-initialize if rate differs
+    setTimeout(async () => {
+      try {
+        const detectedRate = await window.electronAPI.audio.getSampleRate();
+        if (detectedRate > 0 && detectedRate !== this.currentSampleRate) {
+          this.reinitializeForSampleRate(detectedRate);
+        }
+      } catch (error) {
+        console.error('Error querying sample rate:', error);
+      }
+    }, 500);
 
     console.log('Audio capture started:', targetDevice.name);
   }

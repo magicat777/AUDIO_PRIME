@@ -96,6 +96,7 @@ export interface ElectronAPI {
     getDevices: () => Promise<AudioDevice[]>;
     start: (deviceId: string) => Promise<boolean>;
     stop: () => Promise<boolean>;
+    getSampleRate: () => Promise<number>;
     onData: (callback: (samples: number[]) => void) => () => void;
   };
   window: {
@@ -160,6 +161,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getDevices: () => ipcRenderer.invoke('audio:devices'),
     start: (deviceId: string) => ipcRenderer.invoke('audio:start', deviceId),
     stop: () => ipcRenderer.invoke('audio:stop'),
+    getSampleRate: () => ipcRenderer.invoke('audio:sample-rate'),
     onData: (callback: (samples: number[]) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, samples: number[]) => {
         callback(samples);
