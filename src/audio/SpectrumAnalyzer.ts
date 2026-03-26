@@ -104,6 +104,10 @@ export class SpectrumAnalyzer {
   private peakHolds: Float32Array;
   private peakTimestamps: Float32Array;
 
+  // Pre-allocated processing buffers (avoid per-frame allocations)
+  private rawOutputBuffer: Float32Array;
+  private outputBuffer: Float32Array;
+
   // Constants
   private readonly PEAK_HOLD_MS = 1000;
   private readonly PEAK_DECAY_RATE = 0.003;
@@ -125,6 +129,8 @@ export class SpectrumAnalyzer {
     this.barHeights = new Float32Array(barCount);
     this.peakHolds = new Float32Array(barCount);
     this.peakTimestamps = new Float32Array(barCount);
+    this.rawOutputBuffer = new Float32Array(barCount);
+    this.outputBuffer = new Float32Array(barCount);
 
     // Create perceptual band mapping
     this.createBandMapping();
@@ -232,10 +238,12 @@ export class SpectrumAnalyzer {
       });
     }
 
-    // Update actual bar count
+    // Update actual bar count and reallocate all buffers
     this.barCount = this.bandMappings.length;
     this.barHeights = new Float32Array(this.barCount);
     this.peakHolds = new Float32Array(this.barCount);
+    this.rawOutputBuffer = new Float32Array(this.barCount);
+    this.outputBuffer = new Float32Array(this.barCount);
     this.peakTimestamps = new Float32Array(this.barCount);
 
     // Debug: Log band distribution
@@ -297,8 +305,10 @@ export class SpectrumAnalyzer {
    * 8. Apply attack/decay temporal smoothing
    */
   process(fftMagnitudes: Float32Array): Float32Array {
-    const rawOutput = new Float32Array(this.barCount);
-    const output = new Float32Array(this.barCount);
+    const rawOutput = this.rawOutputBuffer;
+    const output = this.outputBuffer;
+    rawOutput.fill(0);
+    output.fill(0);
     const now = performance.now();
 
     // Periodic debug logging

@@ -956,6 +956,26 @@
 
     renderer = new SpectrumRenderer(gl, canvas.width, canvas.height);
 
+    // Handle WebGL context loss and recovery
+    const handleContextLost = (e: Event) => {
+      e.preventDefault(); // Signal we'll handle restoration
+      console.warn('SpectrumPanel: WebGL context lost');
+      renderer = null;
+    };
+    const handleContextRestored = () => {
+      console.log('SpectrumPanel: WebGL context restored, re-initializing renderer');
+      const newGl = canvas.getContext('webgl2', {
+        alpha: false,
+        antialias: false,
+        powerPreference: 'high-performance',
+      });
+      if (newGl) {
+        renderer = new SpectrumRenderer(newGl, canvas.width, canvas.height);
+      }
+    };
+    canvas.addEventListener('webglcontextlost', handleContextLost);
+    canvas.addEventListener('webglcontextrestored', handleContextRestored);
+
     // Handle resize
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
@@ -993,6 +1013,8 @@
 
     return () => {
       resizeObserver.disconnect();
+      canvas.removeEventListener('webglcontextlost', handleContextLost);
+      canvas.removeEventListener('webglcontextrestored', handleContextRestored);
     };
   });
 

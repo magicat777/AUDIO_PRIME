@@ -188,6 +188,28 @@
       return;
     }
 
+    // Handle WebGL context loss and recovery
+    const handleContextLost = (e: Event) => {
+      e.preventDefault();
+      console.warn(`Visualization3DPanel [${visualizationType}]: WebGL context lost`);
+      renderer?.destroy();
+      renderer = null;
+    };
+    const handleContextRestored = async () => {
+      console.log(`Visualization3DPanel [${visualizationType}]: WebGL context restored`);
+      gl = canvas.getContext('webgl2', {
+        alpha: false,
+        antialias: true,
+        depth: true,
+        powerPreference: 'high-performance',
+      });
+      if (gl) {
+        renderer = await createRenderer();
+      }
+    };
+    canvas.addEventListener('webglcontextlost', handleContextLost);
+    canvas.addEventListener('webglcontextrestored', handleContextRestored);
+
     // Handle resize
     resizeObserver = new ResizeObserver((entries) => {
       // Guard against callback firing after canvas is destroyed
@@ -209,6 +231,8 @@
   });
 
   onDestroy(() => {
+    canvas?.removeEventListener('webglcontextlost', handleContextLost);
+    canvas?.removeEventListener('webglcontextrestored', handleContextRestored);
     resizeObserver?.disconnect();
     unsubSpectrum();
     unsubStereo?.();

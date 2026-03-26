@@ -50,6 +50,20 @@
     applicationName: 'None',
     latencyMs: 0,
     available: false,
+    outputDevice: 'Unknown',
+    outputSampleRate: 0,
+    outputBitDepth: 0,
+    outputFormat: 'Unknown',
+    isResampling: false,
+    mediaRole: 'Unknown',
+    quantumSamples: 0,
+    quantumRate: 0,
+    waitUs: 0,
+    busyUs: 0,
+    deviceQuantumSamples: 0,
+    deviceQuantumRate: 0,
+    deviceLatencyMs: 0,
+    pipelineLatencyMs: 0,
   };
 
   let audioInfoInterval: ReturnType<typeof setInterval> | null = null;
@@ -478,24 +492,68 @@
       <span class="value app-name">{audioSourceInfo.applicationName}</span>
     </div>
     <div class="stat-row">
-      <span class="label">Sample Rate:</span>
-      <span class="value">{audioSourceInfo.sampleRate > 0 ? `${audioSourceInfo.sampleRate} Hz` : '---'}</span>
+      <span class="label">Media Role:</span>
+      <span class="value">{audioSourceInfo.mediaRole !== 'Unknown' ? audioSourceInfo.mediaRole : '---'}</span>
     </div>
     <div class="stat-row">
-      <span class="label">Bit Depth:</span>
-      <span class="value">{audioSourceInfo.bitDepth > 0 ? `${audioSourceInfo.bitDepth}-bit` : '---'}</span>
+      <span class="label">Stream Rate:</span>
+      <span class="value">{audioSourceInfo.sampleRate > 0 ? `${(audioSourceInfo.sampleRate / 1000).toFixed(1)} kHz` : '---'}</span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Stream Format:</span>
+      <span class="value">{audioSourceInfo.bitDepth > 0 ? `${audioSourceInfo.bitDepth}-bit ${audioSourceInfo.format}` : '---'}</span>
     </div>
     <div class="stat-row">
       <span class="label">Channels:</span>
       <span class="value">{audioSourceInfo.channels > 0 ? (audioSourceInfo.channels === 2 ? 'Stereo' : audioSourceInfo.channels === 1 ? 'Mono' : `${audioSourceInfo.channels}ch`) : '---'}</span>
     </div>
     <div class="stat-row">
-      <span class="label">Format:</span>
-      <span class="value">{audioSourceInfo.format}</span>
+      <span class="label">Quantum:</span>
+      <span class="value">{audioSourceInfo.quantumSamples > 0 ? `${audioSourceInfo.quantumSamples} samples` : '---'}</span>
     </div>
     <div class="stat-row">
       <span class="label">Stream Latency:</span>
       <span class="value">{audioSourceInfo.latencyMs > 0 ? `${audioSourceInfo.latencyMs.toFixed(1)} ms` : '---'}</span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Processing:</span>
+      <span class="value">{audioSourceInfo.busyUs > 0 ? `${audioSourceInfo.busyUs.toFixed(1)} μs busy / ${audioSourceInfo.waitUs.toFixed(1)} μs wait` : '---'}</span>
+    </div>
+  </div>
+
+  <div class="debug-section">
+    <div class="section-title">Output Device</div>
+    <div class="stat-row">
+      <span class="label">Device:</span>
+      <span class="value app-name">{audioSourceInfo.outputDevice !== 'Unknown' ? audioSourceInfo.outputDevice : '---'}</span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Device Rate:</span>
+      <span class="value">{audioSourceInfo.outputSampleRate > 0 ? `${(audioSourceInfo.outputSampleRate / 1000).toFixed(1)} kHz` : '---'}</span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Device Format:</span>
+      <span class="value">{audioSourceInfo.outputBitDepth > 0 ? `${audioSourceInfo.outputBitDepth}-bit ${audioSourceInfo.outputFormat}` : '---'}</span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Device Quantum:</span>
+      <span class="value">{audioSourceInfo.deviceQuantumSamples > 0 ? `${audioSourceInfo.deviceQuantumSamples} samples (${audioSourceInfo.deviceLatencyMs.toFixed(1)} ms)` : '---'}</span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Resampling:</span>
+      <span class="value" class:resampling-active={audioSourceInfo.isResampling}>
+        {#if !audioSourceInfo.available}
+          ---
+        {:else if audioSourceInfo.isResampling}
+          Yes ({(audioSourceInfo.sampleRate / 1000).toFixed(1)} → {(audioSourceInfo.outputSampleRate / 1000).toFixed(1)} kHz)
+        {:else}
+          No (native)
+        {/if}
+      </span>
+    </div>
+    <div class="stat-row">
+      <span class="label">Pipeline Latency:</span>
+      <span class="value">{audioSourceInfo.pipelineLatencyMs > 0 ? `${audioSourceInfo.pipelineLatencyMs.toFixed(1)} ms` : '---'}</span>
     </div>
   </div>
 </div>
@@ -591,6 +649,10 @@
   .value.app-name {
     color: #0ff;
     text-transform: capitalize;
+  }
+
+  .value.resampling-active {
+    color: #ffa500;
   }
 
   .bands .band-row {

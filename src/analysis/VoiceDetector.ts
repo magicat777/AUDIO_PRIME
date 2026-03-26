@@ -285,20 +285,23 @@ export class VoiceDetector {
    */
   private detectFormants(spectrum: Float32Array): number[] {
     const formants: number[] = [];
-    const formantBars = spectrum.slice(this.formantStartBar, this.formantEndBar + 1);
+    const start = this.formantStartBar;
+    const end = this.formantEndBar;
+    const len = end - start + 1;
 
-    if (formantBars.length < 10) return formants;
+    if (len < 10) return formants;
 
-    const meanLevel = formantBars.reduce((a, b) => a + b, 0) / formantBars.length;
+    // Compute mean without allocating a slice
+    let sum = 0;
+    for (let i = start; i <= end; i++) sum += spectrum[i];
+    const meanLevel = sum / len;
 
-    // Find local maxima (peaks)
-    for (let i = 1; i < formantBars.length - 1; i++) {
-      if (formantBars[i] > formantBars[i - 1] &&
-          formantBars[i] > formantBars[i + 1] &&
-          formantBars[i] > meanLevel * 1.5) {
-        const barIndex = this.formantStartBar + i;
-        formants.push(Math.round(barToFreq(barIndex)));
-
+    // Find local maxima (peaks) using direct indexing
+    for (let i = start + 1; i < end; i++) {
+      if (spectrum[i] > spectrum[i - 1] &&
+          spectrum[i] > spectrum[i + 1] &&
+          spectrum[i] > meanLevel * 1.5) {
+        formants.push(Math.round(barToFreq(i)));
         if (formants.length >= 4) break; // F1-F4
       }
     }
@@ -314,52 +317,56 @@ export class VoiceDetector {
     // Vocal fundamentals typically 85Hz (bass) to 500Hz (soprano high notes)
     const pitchStartBar = freqToBar(85);
     const pitchEndBar = freqToBar(500);
-    const pitchBars = spectrum.slice(pitchStartBar, pitchEndBar + 1);
+    const len = pitchEndBar - pitchStartBar + 1;
 
-    if (pitchBars.length === 0) return 0;
+    if (len === 0) return 0;
 
-    const mean = pitchBars.reduce((a, b) => a + b, 0) / pitchBars.length;
-    const maxInRange = Math.max(...pitchBars);
+    // Compute mean and max without allocating a slice
+    let sum = 0;
+    let maxInRange = 0;
+    for (let i = pitchStartBar; i <= pitchEndBar; i++) {
+      sum += spectrum[i];
+      if (spectrum[i] > maxInRange) maxInRange = spectrum[i];
+    }
+    const mean = sum / len;
 
     // Need some minimum energy in the pitch range
     if (maxInRange < 0.01 || mean < 0.005) return 0;
 
     // Find the STRONGEST local maximum in the vocal fundamental range
     let bestPeakVal = 0;
-    let bestPeakIdx = -1;
+    let bestPeakBar = -1;
 
-    for (let i = 1; i < pitchBars.length - 1; i++) {
-      const val = pitchBars[i];
-      // Must be a local maximum and above mean
-      if (val > pitchBars[i - 1] && val > pitchBars[i + 1] && val > mean * 1.3) {
+    for (let i = pitchStartBar + 1; i < pitchEndBar; i++) {
+      const val = spectrum[i];
+      if (val > spectrum[i - 1] && val > spectrum[i + 1] && val > mean * 1.3) {
         if (val > bestPeakVal) {
           bestPeakVal = val;
-          bestPeakIdx = i;
+          bestPeakBar = i;
         }
       }
     }
 
     // If we found a good local maximum, use it
-    if (bestPeakIdx >= 0 && bestPeakVal > maxInRange * 0.3) {
-      return Math.round(barToFreq(pitchStartBar + bestPeakIdx));
+    if (bestPeakBar >= 0 && bestPeakVal > maxInRange * 0.3) {
+      return Math.round(barToFreq(bestPeakBar));
     }
 
     // Fallback: find the strongest point in a more typical vocal range (100-350Hz)
-    // This helps when there's no clear local maximum
-    const fallbackStart = freqToBar(100) - pitchStartBar;
-    const fallbackEnd = freqToBar(350) - pitchStartBar;
+    const fallbackStartBar = freqToBar(100);
+    const fallbackEndBar = freqToBar(350);
 
     let fallbackMax = 0;
-    let fallbackIdx = -1;
-    for (let i = Math.max(0, fallbackStart); i <= Math.min(pitchBars.length - 1, fallbackEnd); i++) {
-      if (pitchBars[i] > fallbackMax) {
-        fallbackMax = pitchBars[i];
-        fallbackIdx = i;
+    let fallbackBar = -1;
+    for (let i = Math.max(pitchStartBar, fallbackStartBar); i <= Math.min(pitchEndBar, fallbackEndBar); i++) {
+      if (spectrum[i] > fallbackMax) {
+        fallbackMax = spectrum[i];
+        fallbackBar = i;
       }
     }
 
-    if (fallbackIdx >= 0 && fallbackMax > mean * 1.2) {
-      return Math.round(barToFreq(pitchStartBar + fallbackIdx));
+    if (fallbackBar >= 0 && fallbackMax > mean * 1.2) {
+      return Math.round(barToFreq(fallbackBar));
     }
 
     return 0;

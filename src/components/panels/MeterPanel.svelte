@@ -55,10 +55,11 @@
   const VU_ATTACK_MS = 10;  // Fast attack
   const VU_RELEASE_MS = 300; // Slower release (VU standard is ~300ms)
 
-  // Peak hold values
+  // Peak hold values (separate timers per channel)
   let peakHoldL = -100;
   let peakHoldR = -100;
-  let peakHoldTime = 0;
+  let peakHoldTimeL = 0;
+  let peakHoldTimeR = 0;
   const PEAK_HOLD_MS = 1500;
   const PEAK_DECAY_RATE = 0.05; // dB per frame
 
@@ -114,15 +115,16 @@
     // Update peak hold for left channel
     if (rawLeftLevel > peakHoldL) {
       peakHoldL = rawLeftLevel;
-      peakHoldTime = now;
-    } else if (now - peakHoldTime > PEAK_HOLD_MS) {
+      peakHoldTimeL = now;
+    } else if (now - peakHoldTimeL > PEAK_HOLD_MS) {
       peakHoldL = Math.max(peakHoldL - PEAK_DECAY_RATE * (deltaTime / 16.67), rawLeftLevel);
     }
 
     // Update peak hold for right channel
     if (rawRightLevel > peakHoldR) {
       peakHoldR = rawRightLevel;
-    } else if (now - peakHoldTime > PEAK_HOLD_MS) {
+      peakHoldTimeR = now;
+    } else if (now - peakHoldTimeR > PEAK_HOLD_MS) {
       peakHoldR = Math.max(peakHoldR - PEAK_DECAY_RATE * (deltaTime / 16.67), rawRightLevel);
     }
 

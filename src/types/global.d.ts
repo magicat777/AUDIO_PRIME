@@ -64,6 +64,23 @@ export interface AudioSourceInfo {
   applicationName: string;
   latencyMs: number;
   available: boolean;
+  // Output device properties
+  outputDevice: string;
+  outputSampleRate: number;
+  outputBitDepth: number;
+  outputFormat: string;
+  // Resampling / media info
+  isResampling: boolean;
+  mediaRole: string;
+  // Live PipeWire scheduling metrics
+  quantumSamples: number;
+  quantumRate: number;
+  waitUs: number;
+  busyUs: number;
+  deviceQuantumSamples: number;
+  deviceQuantumRate: number;
+  deviceLatencyMs: number;
+  pipelineLatencyMs: number;
 }
 
 export interface LayoutSaveResult {
@@ -89,6 +106,7 @@ export interface ElectronAPI {
     toggleFullscreen: () => Promise<boolean>;
     quit: () => Promise<void>;
     onFullscreenChange: (callback: (isFullscreen: boolean) => void) => () => void;
+    onBeforeQuit: (callback: () => void) => () => void;
   };
   system: {
     getMetrics: () => Promise<SystemMetrics>;
@@ -97,6 +115,14 @@ export interface ElectronAPI {
   layout: {
     save: (data: unknown) => Promise<LayoutSaveResult>;
     load: () => Promise<LayoutLoadResult>;
+  };
+  visibility: {
+    save: (data: unknown) => Promise<{ success: boolean; path?: string; error?: string }>;
+    load: () => Promise<{ success: boolean; data?: unknown; error?: string }>;
+  };
+  presets: {
+    exportPreset: (data: unknown) => Promise<{ success: boolean; path?: string; canceled?: boolean; error?: string }>;
+    importPreset: () => Promise<{ success: boolean; data?: unknown; canceled?: boolean; error?: string }>;
   };
   settings: {
     get: (key: string) => Promise<unknown>;

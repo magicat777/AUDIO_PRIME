@@ -8,12 +8,23 @@ const execAsync = promisify(exec);
 
 /**
  * Linux audio capture implementation using PulseAudio/PipeWire via parec
+ *
+ * Features auto-reconnect with exponential backoff when parec exits unexpectedly.
  */
 export class LinuxCapture implements AudioCapture {
   private process: ChildProcess | null = null;
   private dataCallback: AudioDataCallback | null = null;
   private errorCallback: AudioErrorCallback | null = null;
   private closeCallback: AudioCloseCallback | null = null;
+
+  // Auto-reconnect state
+  private activeDeviceId: string | null = null;
+  private intentionalStop = false;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempts = 0;
+  private readonly MAX_RECONNECT_ATTEMPTS = 10;
+  private readonly BASE_RECONNECT_DELAY_MS = 500;
+  private readonly MAX_RECONNECT_DELAY_MS = 30000;
 
   async listDevices(): Promise<AudioDevice[]> {
     try {
@@ -98,28 +109,55 @@ export class LinuxCapture implements AudioCapture {
 
   start(deviceId: string): void {
     // Stop any existing capture
-    if (this.process) {
-      this.process.kill();
+    this.intentionalStop = false;
+    this.stopInternal();
+    this.cancelReconnect();
+
+    this.activeDeviceId = deviceId;
+    this.reconnectAttempts = 0;
+    this.spawnParec(deviceId);
+  }
+
+  private spawnParec(deviceId: string): void {
+    try {
+      this.process = spawn('parec', [
+        '--device', deviceId,
+        '--rate', '48000',
+        '--channels', '2',
+        '--format', 'float32le',
+        '--raw',
+        '--latency-msec', '10',
+      ]);
+    } catch (error) {
+      const msg = `Failed to spawn parec: ${error}`;
+      console.error(msg);
+      if (this.errorCallback) this.errorCallback(msg);
+      this.scheduleReconnect();
+      return;
     }
 
-    // Use parec for PipeWire/PulseAudio capture with low latency
-    this.process = spawn('parec', [
-      '--device', deviceId,
-      '--rate', '48000',
-      '--channels', '2',
-      '--format', 'float32le',
-      '--raw',
-      '--latency-msec', '10',  // Minimize capture latency
-    ]);
+    // Handle spawn errors (e.g., parec not in PATH, permission denied)
+    this.process.on('error', (error) => {
+      const msg = `Audio capture process error: ${error.message}`;
+      console.error(msg);
+      this.process = null;
+      if (this.errorCallback) this.errorCallback(msg);
+      this.scheduleReconnect();
+    });
 
     this.process.stdout?.on('data', (chunk: Buffer) => {
-      // Convert raw bytes to Float32Array
+      // Reset reconnect counter on successful data — stream is healthy
+      this.reconnectAttempts = 0;
+
+      // Ensure byte-aligned for Float32 (4 bytes per sample)
+      const alignedLength = chunk.byteLength - (chunk.byteLength % 4);
+      if (alignedLength === 0) return;
+
       const samples = new Float32Array(chunk.buffer.slice(
         chunk.byteOffset,
-        chunk.byteOffset + chunk.byteLength
+        chunk.byteOffset + alignedLength
       ));
 
-      // Send to registered callback
       if (this.dataCallback) {
         this.dataCallback(samples);
       }
@@ -134,19 +172,73 @@ export class LinuxCapture implements AudioCapture {
     });
 
     this.process.on('close', (code) => {
-      console.log('Audio capture process exited with code:', code);
       this.process = null;
-      if (this.closeCallback) {
-        this.closeCallback(code);
+
+      if (this.intentionalStop) {
+        // Normal stop — notify and don't reconnect
+        console.log('Audio capture stopped (intentional)');
+        if (this.closeCallback) this.closeCallback(code);
+        return;
       }
+
+      // Unexpected exit — attempt reconnect
+      console.warn(`Audio capture exited unexpectedly (code: ${code}), will reconnect...`);
+      if (this.closeCallback) this.closeCallback(code);
+      this.scheduleReconnect();
     });
   }
 
-  stop(): void {
+  private scheduleReconnect(): void {
+    if (this.intentionalStop || !this.activeDeviceId) return;
+    if (this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
+      console.error(`Audio capture: gave up after ${this.MAX_RECONNECT_ATTEMPTS} reconnect attempts`);
+      if (this.errorCallback) {
+        this.errorCallback(`Audio capture failed after ${this.MAX_RECONNECT_ATTEMPTS} attempts. Check audio device.`);
+      }
+      return;
+    }
+
+    // Exponential backoff: 500ms, 1s, 2s, 4s, ... capped at 30s
+    const delay = Math.min(
+      this.BASE_RECONNECT_DELAY_MS * Math.pow(2, this.reconnectAttempts),
+      this.MAX_RECONNECT_DELAY_MS,
+    );
+    this.reconnectAttempts++;
+
+    console.log(`Audio capture: reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS})`);
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.intentionalStop && this.activeDeviceId) {
+        this.spawnParec(this.activeDeviceId);
+      }
+    }, delay);
+  }
+
+  private cancelReconnect(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.reconnectAttempts = 0;
+  }
+
+  private stopInternal(): void {
     if (this.process) {
-      this.process.kill();
+      try {
+        this.process.kill('SIGTERM');
+      } catch {
+        // Process already dead
+      }
       this.process = null;
     }
+  }
+
+  stop(): void {
+    this.intentionalStop = true;
+    this.cancelReconnect();
+    this.stopInternal();
+    this.activeDeviceId = null;
   }
 
   isCapturing(): boolean {

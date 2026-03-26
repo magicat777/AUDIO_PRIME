@@ -1,7 +1,10 @@
 /**
  * Module visibility store - controls which panels are shown/hidden
+ *
+ * Persists to both localStorage (sync, for fast startup) and file system
+ * via Electron IPC (durable across installations).
  */
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
 
 export interface ModuleVisibility {
   spectrum: boolean;
@@ -78,40 +81,89 @@ function loadFromStorage(): ModuleVisibility {
   return defaultVisibility;
 }
 
+// Save to both localStorage and file system
+function saveToStorage(state: ModuleVisibility) {
+  if (typeof window !== 'undefined') {
+    // localStorage — immediate
+    if (window.localStorage) {
+      localStorage.setItem('audio-prime-modules', JSON.stringify(state));
+    }
+    // File system via Electron IPC — durable
+    if (window.electronAPI?.visibility) {
+      window.electronAPI.visibility.save(state).catch((error: unknown) => {
+        console.error('Error saving visibility to file:', error);
+      });
+    }
+  }
+}
+
+// Load from file via Electron IPC (async)
+async function loadFromFile(): Promise<ModuleVisibility | null> {
+  if (typeof window !== 'undefined' && window.electronAPI?.visibility) {
+    try {
+      const result = await window.electronAPI.visibility.load();
+      if (result.success && result.data) {
+        const parsed = { ...defaultVisibility, ...(result.data as Partial<ModuleVisibility>) };
+        return ensureMinimumVisibility(parsed);
+      }
+    } catch (error) {
+      console.error('Error loading visibility from file:', error);
+    }
+  }
+  return null;
+}
+
 // Create the store
 function createModuleVisibilityStore() {
-  const { subscribe, set, update } = writable<ModuleVisibility>(loadFromStorage());
+  const localState = loadFromStorage();
+  const { subscribe, set, update } = writable<ModuleVisibility>(localState);
+
+  // Async load from file and merge (file wins if it has data, since it's durable)
+  if (typeof window !== 'undefined') {
+    loadFromFile().then((fileState) => {
+      if (fileState) {
+        set(fileState);
+        // Sync back to localStorage
+        if (window.localStorage) {
+          localStorage.setItem('audio-prime-modules', JSON.stringify(fileState));
+        }
+        console.log('Module visibility loaded from file');
+      }
+    });
+  }
 
   return {
     subscribe,
     toggle: (module: keyof ModuleVisibility) => {
       update(state => {
         const newState = { ...state, [module]: !state[module] };
-        // Ensure at least one core module remains visible
         const safeState = ensureMinimumVisibility(newState);
-        // Persist to localStorage
-        if (typeof window !== 'undefined' && window.localStorage) {
-          localStorage.setItem('audio-prime-modules', JSON.stringify(safeState));
-        }
+        saveToStorage(safeState);
         return safeState;
       });
     },
     set: (module: keyof ModuleVisibility, visible: boolean) => {
       update(state => {
         const newState = { ...state, [module]: visible };
-        // Ensure at least one core module remains visible
         const safeState = ensureMinimumVisibility(newState);
-        if (typeof window !== 'undefined' && window.localStorage) {
-          localStorage.setItem('audio-prime-modules', JSON.stringify(safeState));
-        }
+        saveToStorage(safeState);
         return safeState;
       });
     },
     reset: () => {
       set(defaultVisibility);
-      if (typeof window !== 'undefined' && window.localStorage) {
-        localStorage.removeItem('audio-prime-modules');
-      }
+      saveToStorage(defaultVisibility);
+    },
+    // Get current state (for preset saving)
+    getState: (): ModuleVisibility => {
+      return get({ subscribe });
+    },
+    // Restore full state (for preset loading)
+    restore: (visibility: ModuleVisibility) => {
+      const merged = { ...defaultVisibility, ...visibility };
+      const safeState = ensureMinimumVisibility(merged);
+      set(safeState);
+      saveToStorage(safeState);
     },
   };
 }

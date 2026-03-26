@@ -6,6 +6,7 @@
  * Supports proportional scaling when window size changes (e.g., fullscreen).
  */
 import { writable, derived, get } from 'svelte/store';
+import type { ModuleVisibility } from './moduleVisibility';
 
 // Grid configuration
 export const GRID_CONFIG = {
@@ -38,6 +39,7 @@ export interface ScaleState {
 export interface LayoutPreset {
   name: string;
   panels: Record<string, PanelLayout>;
+  visibility?: ModuleVisibility;  // Which panels are shown/hidden (added in v1.3)
   createdAt: number;
 }
 
@@ -192,27 +194,41 @@ async function loadFromFile(): Promise<GridLayoutState | null> {
   return null;
 }
 
-// Save to file via Electron IPC (debounced)
-function saveToFile(state: GridLayoutState) {
+// Persistent data shape (excludes transient state like scale, activePanel)
+function getDataToSave(state: GridLayoutState) {
+  return {
+    panels: state.panels,
+    presets: state.presets,
+    gridVisible: state.gridVisible,
+    snapEnabled: state.snapEnabled,
+  };
+}
+
+// Save to file via Electron IPC (debounced for frequent updates, immediate for critical ones)
+function saveToFile(state: GridLayoutState, immediate = false) {
   if (typeof window !== 'undefined' && window.electronAPI?.layout) {
-    // Debounce to avoid too many writes
-    if (saveDebounceTimer) {
-      clearTimeout(saveDebounceTimer);
-    }
-    saveDebounceTimer = setTimeout(async () => {
+    const doSave = async () => {
       try {
-        // Only save panels, presets, gridVisible, snapEnabled (not scale state)
-        const dataToSave = {
-          panels: state.panels,
-          presets: state.presets,
-          gridVisible: state.gridVisible,
-          snapEnabled: state.snapEnabled,
-        };
-        await window.electronAPI.layout.save(dataToSave);
+        await window.electronAPI.layout.save(getDataToSave(state));
       } catch (error) {
         console.error('Error saving layout to file:', error);
       }
-    }, SAVE_DEBOUNCE_MS);
+    };
+
+    if (immediate) {
+      // Critical saves (presets, reset) bypass debounce
+      if (saveDebounceTimer) {
+        clearTimeout(saveDebounceTimer);
+        saveDebounceTimer = null;
+      }
+      doSave();
+    } else {
+      // Debounce frequent updates (drag/resize)
+      if (saveDebounceTimer) {
+        clearTimeout(saveDebounceTimer);
+      }
+      saveDebounceTimer = setTimeout(doSave, SAVE_DEBOUNCE_MS);
+    }
   }
 }
 
@@ -224,24 +240,62 @@ function saveToLocalStorage(state: GridLayoutState) {
 }
 
 // Combined save function - saves to both file and localStorage
-function saveToStorage(state: GridLayoutState) {
-  saveToFile(state);
+// Use immediate=true for critical changes (presets, reset) to prevent data loss on app close
+function saveToStorage(state: GridLayoutState, immediate = false) {
+  saveToFile(state, immediate);
   saveToLocalStorage(state);
+}
+
+// Merge two layout states, preferring the one with more/newer presets
+// Panel positions come from the file (canonical), presets from whichever source has more
+function mergeStates(fileState: GridLayoutState, localState: GridLayoutState): GridLayoutState {
+  // Use file panels as canonical (they survive across installations)
+  const merged = { ...fileState };
+
+  // For presets: keep whichever has more, or the file version if equal
+  // This handles the case where localStorage got a preset saved but the file didn't (app closed too fast)
+  if (localState.presets.length > fileState.presets.length) {
+    merged.presets = localState.presets;
+    console.log('Using localStorage presets (more recent)');
+  }
+
+  return merged;
 }
 
 // Create the store
 function createGridLayoutStore() {
   // Start with localStorage data (sync) for immediate rendering
-  const { subscribe, set, update } = writable<GridLayoutState>(loadFromLocalStorage());
+  const localState = loadFromLocalStorage();
+  const { subscribe, set, update } = writable<GridLayoutState>(localState);
 
-  // Then async load from file (preferred) and update store if available
+  // Then async load from file and merge with localStorage state
   if (typeof window !== 'undefined') {
     loadFromFile().then((fileState) => {
       if (fileState) {
-        set(fileState);
-        console.log('Layout updated from file storage');
+        const merged = mergeStates(fileState, localState);
+        set(merged);
+        // Sync the merged state back to both stores
+        saveToStorage(merged, true);
+        console.log('Layout merged from file + localStorage');
       }
     });
+
+    // Flush pending saves on window close or Electron quit signal
+    const flushPendingSaves = () => {
+      if (saveDebounceTimer) {
+        clearTimeout(saveDebounceTimer);
+        saveDebounceTimer = null;
+      }
+      const currentState = get({ subscribe });
+      saveToFile(currentState, true);
+    };
+
+    window.addEventListener('beforeunload', flushPendingSaves);
+
+    // Listen for coordinated quit signal from main process
+    if (window.electronAPI?.window?.onBeforeQuit) {
+      window.electronAPI.window.onBeforeQuit(flushPendingSaves);
+    }
   }
 
   return {
@@ -341,24 +395,27 @@ function createGridLayoutStore() {
     },
 
     // Toggle panel lock
-    // When locking, convert to current display size so panel doesn't resize
+    // When locking: convert to display size so panel doesn't visually jump
+    // When unlocking: convert back to reference size so uniformScale renders correctly
     toggleLock: (panelId: string) => {
       update(state => {
         const panel = state.panels[panelId];
         if (!panel) return state;
 
         const willBeLocked = !panel.locked;
+        const { scaleX, scaleY } = state.scale;
+        const uniformScale = Math.min(scaleX, scaleY);
         let newWidth = panel.width;
         let newHeight = panel.height;
 
-        // When locking an unlocked panel, convert to current display size
-        if (willBeLocked && !panel.locked) {
-          const { scaleX, scaleY } = state.scale;
-          const uniformScale = Math.min(scaleX, scaleY);
-          if (uniformScale > 0) {
-            newWidth = Math.round(panel.width * uniformScale);
-            newHeight = Math.round(panel.height * uniformScale);
-          }
+        if (willBeLocked && !panel.locked && uniformScale > 0) {
+          // Locking: store display-space size (stored * scale → display)
+          newWidth = Math.round(panel.width * uniformScale);
+          newHeight = Math.round(panel.height * uniformScale);
+        } else if (!willBeLocked && panel.locked && uniformScale > 0) {
+          // Unlocking: restore reference-space size (display / scale → stored)
+          newWidth = Math.round(panel.width / uniformScale);
+          newHeight = Math.round(panel.height / uniformScale);
         }
 
         const newState = {
@@ -402,11 +459,27 @@ function createGridLayoutStore() {
     },
 
     // Unlock all panels
+    // Reverse the scale conversion that lockAll applied, so panels
+    // return to reference-space sizes and render correctly via uniformScale
     unlockAll: () => {
       update(state => {
+        const { scaleX, scaleY } = state.scale;
+        const uniformScale = Math.min(scaleX, scaleY);
+
         const newPanels = { ...state.panels };
         for (const id of Object.keys(newPanels)) {
-          newPanels[id] = { ...newPanels[id], locked: false };
+          const panel = newPanels[id];
+          if (panel.locked && uniformScale > 0) {
+            // Convert display-space sizes back to reference-space
+            newPanels[id] = {
+              ...panel,
+              width: Math.round(panel.width / uniformScale),
+              height: Math.round(panel.height / uniformScale),
+              locked: false,
+            };
+          } else {
+            newPanels[id] = { ...panel, locked: false };
+          }
         }
         const newState = { ...state, panels: newPanels };
         saveToStorage(newState);
@@ -438,15 +511,16 @@ function createGridLayoutStore() {
       });
     },
 
-    // Reset to default layout
+    // Reset to default layout (preserves saved presets)
     reset: () => {
-      set(defaultState);
-      // Clear localStorage
-      if (typeof window !== 'undefined' && window.localStorage) {
-        localStorage.removeItem('audio-prime-grid-layout');
-      }
-      // Save default state to file (overwrites existing file)
-      saveToStorage(defaultState);
+      update(state => {
+        const newState = {
+          ...defaultState,
+          presets: state.presets, // Keep saved presets
+        };
+        saveToStorage(newState, true);
+        return newState;
+      });
     },
 
     // Get panel by ID
@@ -550,8 +624,8 @@ function createGridLayoutStore() {
       return get({ subscribe }).scale;
     },
 
-    // Save current layout as a preset
-    savePreset: (name: string) => {
+    // Save current layout as a preset (optionally includes module visibility)
+    savePreset: (name: string, visibility?: ModuleVisibility) => {
       update(state => {
         // Create a deep copy of current panels
         const panelsCopy = JSON.parse(JSON.stringify(state.panels));
@@ -559,6 +633,7 @@ function createGridLayoutStore() {
         const newPreset: LayoutPreset = {
           name: name.trim() || `Preset ${state.presets.length + 1}`,
           panels: panelsCopy,
+          visibility: visibility ? JSON.parse(JSON.stringify(visibility)) : undefined,
           createdAt: Date.now(),
         };
 
@@ -569,24 +644,33 @@ function createGridLayoutStore() {
         }
 
         const newState = { ...state, presets };
-        saveToStorage(newState);
+        saveToStorage(newState, true); // Immediate write — critical data
         return newState;
       });
     },
 
-    // Load a preset by index
-    loadPreset: (index: number) => {
+    // Load a preset by index. Returns the preset's visibility if it has one.
+    loadPreset: (index: number): ModuleVisibility | undefined => {
+      let presetVisibility: ModuleVisibility | undefined;
       update(state => {
         const preset = state.presets[index];
         if (!preset) return state;
 
-        // Deep copy the preset panels
-        const panelsCopy = JSON.parse(JSON.stringify(preset.panels));
+        // Deep copy the preset panels and merge with current defaults
+        // so that panels added after the preset was saved still appear
+        const presetPanels = JSON.parse(JSON.stringify(preset.panels)) as Record<string, PanelLayout>;
+        const mergedPanels: Record<string, PanelLayout> = {};
+        for (const [id, defaultPanel] of Object.entries(defaultState.panels)) {
+          mergedPanels[id] = presetPanels[id] ?? defaultPanel;
+        }
 
-        const newState = { ...state, panels: panelsCopy };
-        saveToStorage(newState);
+        presetVisibility = preset.visibility ? JSON.parse(JSON.stringify(preset.visibility)) : undefined;
+
+        const newState = { ...state, panels: mergedPanels };
+        saveToStorage(newState, true); // Immediate write
         return newState;
       });
+      return presetVisibility;
     },
 
     // Delete a preset by index
@@ -594,7 +678,7 @@ function createGridLayoutStore() {
       update(state => {
         const presets = state.presets.filter((_, i) => i !== index);
         const newState = { ...state, presets };
-        saveToStorage(newState);
+        saveToStorage(newState, true); // Immediate write — critical data
         return newState;
       });
     },
@@ -602,6 +686,29 @@ function createGridLayoutStore() {
     // Get all presets
     getPresets: (): LayoutPreset[] => {
       return get({ subscribe }).presets;
+    },
+
+    // Import a preset from an external file
+    importPreset: (data: { name?: string; panels?: Record<string, unknown>; visibility?: unknown; createdAt?: number }) => {
+      update(state => {
+        if (!data.panels || typeof data.panels !== 'object') return state;
+
+        const newPreset: LayoutPreset = {
+          name: data.name || 'Imported',
+          panels: data.panels as Record<string, PanelLayout>,
+          visibility: data.visibility as ModuleVisibility | undefined,
+          createdAt: data.createdAt || Date.now(),
+        };
+
+        let presets = [...state.presets, newPreset];
+        if (presets.length > MAX_PRESETS) {
+          presets = presets.slice(-MAX_PRESETS);
+        }
+
+        const newState = { ...state, presets };
+        saveToStorage(newState, true);
+        return newState;
+      });
     },
   };
 }

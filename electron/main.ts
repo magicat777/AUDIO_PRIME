@@ -4,7 +4,7 @@ if (process.env.APPIMAGE || process.platform === 'linux') {
   process.argv.push('--no-sandbox');
 }
 
-import { app, BrowserWindow, ipcMain, shell, safeStorage, session } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, safeStorage, session, dialog } from 'electron';
 
 // Suppress noisy Chromium DevTools errors (Autofill, etc.)
 app.commandLine.appendSwitch('disable-features', 'AutofillServerCommunication');
@@ -110,6 +110,12 @@ const IPC = {
   // Layout persistence
   LAYOUT_SAVE: 'layout:save',
   LAYOUT_LOAD: 'layout:load',
+  // Module visibility persistence
+  VISIBILITY_SAVE: 'visibility:save',
+  VISIBILITY_LOAD: 'visibility:load',
+  // Preset import/export
+  PRESET_EXPORT: 'preset:export',
+  PRESET_IMPORT: 'preset:import',
   // Settings persistence
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
@@ -295,7 +301,19 @@ ipcMain.handle(IPC.WINDOW_FULLSCREEN, () => {
   return false;
 });
 
-ipcMain.handle(IPC.WINDOW_QUIT, () => {
+ipcMain.handle(IPC.WINDOW_QUIT, async () => {
+  // Coordinated shutdown: ask renderer to flush, then quit
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      // Tell renderer to flush all pending state
+      mainWindow.webContents.send('app:before-quit');
+      // Give renderer up to 500ms to complete async saves
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  } catch {
+    // Window already gone, proceed with quit
+  }
+  stopAudioCapture();
   app.quit();
 });
 
@@ -344,6 +362,84 @@ ipcMain.handle(IPC.LAYOUT_LOAD, async () => {
     return { success: true, data: layoutData };
   } catch (error) {
     console.error('Error loading layout:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+// ============================================
+// Module Visibility Persistence (File-based)
+// ============================================
+
+const VISIBILITY_FILENAME = 'audio-prime-visibility.json';
+
+function getVisibilityFilePath(): string {
+  return join(app.getPath('userData'), VISIBILITY_FILENAME);
+}
+
+ipcMain.handle(IPC.VISIBILITY_SAVE, async (_, visibilityData: unknown) => {
+  try {
+    const filePath = getVisibilityFilePath();
+    const jsonData = JSON.stringify(visibilityData, null, 2);
+    fs.writeFileSync(filePath, jsonData, 'utf-8');
+    return { success: true, path: filePath };
+  } catch (error) {
+    console.error('Error saving visibility:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle(IPC.VISIBILITY_LOAD, async () => {
+  try {
+    const filePath = getVisibilityFilePath();
+    if (!fs.existsSync(filePath)) {
+      return { success: true, data: null };
+    }
+    const jsonData = fs.readFileSync(filePath, 'utf-8');
+    const data = JSON.parse(jsonData);
+    return { success: true, data };
+  } catch (error) {
+    console.error('Error loading visibility:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+// ============================================
+// Preset Import/Export
+// ============================================
+
+ipcMain.handle(IPC.PRESET_EXPORT, async (_, presetData: unknown) => {
+  try {
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      title: 'Export Layout Preset',
+      defaultPath: 'audio-prime-preset.json',
+      filters: [{ name: 'JSON Files', extensions: ['json'] }],
+    });
+    if (result.canceled || !result.filePath) {
+      return { success: false, canceled: true };
+    }
+    fs.writeFileSync(result.filePath, JSON.stringify(presetData, null, 2), 'utf-8');
+    return { success: true, path: result.filePath };
+  } catch (error) {
+    console.error('Error exporting preset:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle(IPC.PRESET_IMPORT, async () => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Import Layout Preset',
+      filters: [{ name: 'JSON Files', extensions: ['json'] }],
+      properties: ['openFile'],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, canceled: true };
+    }
+    const jsonData = fs.readFileSync(result.filePaths[0], 'utf-8');
+    const data = JSON.parse(jsonData);
+    return { success: true, data };
+  } catch (error) {
+    console.error('Error importing preset:', error);
     return { success: false, error: String(error) };
   }
 });
@@ -498,6 +594,21 @@ interface AudioSourceInfo {
   applicationName: string;
   latencyMs: number;
   available: boolean;
+  outputDevice: string;
+  outputSampleRate: number;
+  outputBitDepth: number;
+  outputFormat: string;
+  isResampling: boolean;
+  mediaRole: string;
+  // Live PipeWire scheduling metrics
+  quantumSamples: number;
+  quantumRate: number;
+  waitUs: number;
+  busyUs: number;
+  deviceQuantumSamples: number;
+  deviceQuantumRate: number;
+  deviceLatencyMs: number;
+  pipelineLatencyMs: number;
 }
 
 let cachedAudioInfo: AudioSourceInfo | null = null;
@@ -523,13 +634,88 @@ async function getAudioSourceInfo(): Promise<AudioSourceInfo> {
     applicationName: 'None',
     latencyMs: 0,
     available: false,
+    outputDevice: 'Unknown',
+    outputSampleRate: 0,
+    outputBitDepth: 0,
+    outputFormat: 'Unknown',
+    isResampling: false,
+    mediaRole: 'Unknown',
+    quantumSamples: 0,
+    quantumRate: 0,
+    waitUs: 0,
+    busyUs: 0,
+    deviceQuantumSamples: 0,
+    deviceQuantumRate: 0,
+    deviceLatencyMs: 0,
+    pipelineLatencyMs: 0,
   };
 
   try {
-    const { stdout } = await execAsync('pactl list sink-inputs 2>/dev/null');
+    // Query sink-inputs, sinks, and pw-top in parallel
+    const [sinkInputResult, sinksResult, pwTopResult] = await Promise.all([
+      execAsync('pactl list sink-inputs 2>/dev/null'),
+      execAsync('pactl list sinks 2>/dev/null'),
+      execAsync('pw-top -b -n 2 2>/dev/null').catch(() => ({ stdout: '', stderr: '' })),
+    ]);
+
+    // Parse pw-top output for live scheduling metrics
+    // Format: "R  84  8192  44100  13.5us  6.1us  0.00  0.00  2  F32LE 2 44100  + spotify"
+    // Only "R" (running) lines have valid metrics; C/S lines show zeros
+    const pwTopById = new Map<string, { name: string; quantum: number; rate: number; waitUs: number; busyUs: number }>();
+    if (pwTopResult.stdout) {
+      const parseTime = (val: string, unit: string): number => {
+        const n = parseFloat(val);
+        if (unit === 'ms') return n * 1000;
+        if (unit === 's') return n * 1e6;
+        return n; // already μs
+      };
+      for (const line of pwTopResult.stdout.split('\n')) {
+        // Only parse Running lines with real metrics
+        const match = line.match(
+          /^\s*R\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)([mu]?s)\s+([\d.]+)([mu]?s)\s+[\d.]+\s+[\d.]+\s+\d+\s+\S+\s+\d+\s+\d+\s+[+]?\s*(.+)/
+        );
+        if (match) {
+          const entry = {
+            name: match[8].trim(),
+            quantum: parseInt(match[2], 10),
+            rate: parseInt(match[3], 10),
+            waitUs: parseTime(match[4], match[5]),
+            busyUs: parseTime(match[6], match[7]),
+          };
+          // Store by ID (later entries from -n 2 overwrite earlier, giving fresher data)
+          pwTopById.set(match[1], entry);
+        }
+      }
+    }
+
+    // Build a map of sink index -> sink properties
+    const sinkMap = new Map<string, { description: string; nodeName: string; sampleRate: number; bitDepth: number; format: string }>();
+    const sinkBlocks = sinksResult.stdout.split('Sink #');
+    for (const block of sinkBlocks) {
+      if (!block.trim()) continue;
+      const indexMatch = block.match(/^(\d+)/);
+      const nameMatch = block.match(/Name:\s*(\S+)/);
+      const descMatch = block.match(/Description:\s*(.+)/);
+      const specMatch = block.match(/Sample Specification:\s*(\S+)\s+(\d+)ch\s+(\d+)Hz/);
+      if (indexMatch && specMatch) {
+        const fmt = specMatch[1];
+        let bd = 16;
+        if (fmt.includes('32')) bd = 32;
+        else if (fmt.includes('24')) bd = 24;
+        else if (fmt.includes('16')) bd = 16;
+        else if (fmt.includes('8')) bd = 8;
+        sinkMap.set(indexMatch[1], {
+          description: descMatch ? descMatch[1].trim() : 'Unknown',
+          nodeName: nameMatch ? nameMatch[1].trim() : '',
+          sampleRate: parseInt(specMatch[3], 10),
+          bitDepth: bd,
+          format: fmt.toUpperCase(),
+        });
+      }
+    }
 
     // Parse sink-input info - look for active audio streams
-    const sinkInputs = stdout.split('Sink Input #');
+    const sinkInputs = sinkInputResult.stdout.split('Sink Input #');
 
     for (const input of sinkInputs) {
       if (!input.trim()) continue;
@@ -542,6 +728,12 @@ async function getAudioSourceInfo(): Promise<AudioSourceInfo> {
 
       // Extract node latency (e.g., "8192/44100")
       const latencyMatch = input.match(/node\.latency\s*=\s*"(\d+)\/(\d+)"/);
+
+      // Extract the target sink index
+      const sinkMatch = input.match(/Sink:\s*(\d+)/);
+
+      // Extract media role
+      const mediaRoleMatch = input.match(/media\.role\s*=\s*"([^"]+)"/);
 
       if (sampleSpecMatch) {
         const format = sampleSpecMatch[1];
@@ -563,14 +755,61 @@ async function getAudioSourceInfo(): Promise<AudioSourceInfo> {
           latencyMs = (samples / rate) * 1000;
         }
 
+        // Look up the output sink this stream is routed to
+        const sinkId = sinkMatch ? sinkMatch[1] : '';
+        const sink = sinkMap.get(sinkId);
+
+        const outputSampleRate = sink?.sampleRate ?? 0;
+        const isResampling = outputSampleRate > 0 && outputSampleRate !== sampleRate;
+
+        // Look up live PipeWire metrics by matching pw-top node names
+        const appName = appNameMatch ? appNameMatch[1] : 'Unknown';
+        const appNameLower = appName.toLowerCase();
+        const sinkNodeName = sink?.nodeName ?? '';
+        let pwStream: { quantum: number; rate: number; waitUs: number; busyUs: number } | undefined;
+        let pwDevice: { quantum: number; rate: number; waitUs: number; busyUs: number } | undefined;
+        for (const entry of pwTopById.values()) {
+          // Stream match: pw-top name contains the application name (e.g., "spotify")
+          if (!pwStream && entry.name.toLowerCase().includes(appNameLower)) {
+            pwStream = entry;
+          }
+          // Device match: pw-top node name exactly matches the pactl sink Name
+          if (!pwDevice && sinkNodeName && entry.name === sinkNodeName) {
+            pwDevice = entry;
+          }
+        }
+
+        // Compute live latencies from quantum/rate
+        const streamLatencyMs = pwStream
+          ? (pwStream.quantum / pwStream.rate) * 1000
+          : latencyMs;
+        const deviceLatencyMs = pwDevice
+          ? (pwDevice.quantum / pwDevice.rate) * 1000
+          : 0;
+        const pipelineLatencyMs = streamLatencyMs + deviceLatencyMs;
+
         cachedAudioInfo = {
           sampleRate,
           bitDepth,
           channels,
           format: format.toUpperCase(),
-          applicationName: appNameMatch ? appNameMatch[1] : 'Unknown',
-          latencyMs,
+          applicationName: appName,
+          latencyMs: streamLatencyMs,
           available: true,
+          outputDevice: sink?.description ?? 'Unknown',
+          outputSampleRate,
+          outputBitDepth: sink?.bitDepth ?? 0,
+          outputFormat: sink?.format ?? 'Unknown',
+          isResampling,
+          mediaRole: mediaRoleMatch ? mediaRoleMatch[1] : 'Unknown',
+          quantumSamples: pwStream?.quantum ?? 0,
+          quantumRate: pwStream?.rate ?? 0,
+          waitUs: pwStream?.waitUs ?? 0,
+          busyUs: pwStream?.busyUs ?? 0,
+          deviceQuantumSamples: pwDevice?.quantum ?? 0,
+          deviceQuantumRate: pwDevice?.rate ?? 0,
+          deviceLatencyMs,
+          pipelineLatencyMs,
         };
         lastAudioInfoFetch = now;
         return cachedAudioInfo;
@@ -1449,6 +1688,11 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   stopAudioCapture();
+  // Close OAuth server if still running
+  if (oauthServer) {
+    oauthServer.close();
+    oauthServer = null;
+  }
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -1456,4 +1700,8 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   stopAudioCapture();
+  if (oauthServer) {
+    oauthServer.close();
+    oauthServer = null;
+  }
 });

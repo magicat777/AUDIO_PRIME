@@ -349,11 +349,7 @@ class AudioEngineClass {
     // Recreate beat detector with new FFT size
     this.beatDetector = new BeatDetector(SAMPLE_RATE, size);
 
-    // Terminate old FFT worker and create new one with updated size
-    if (this.fftWorker) {
-      this.fftWorker.terminate();
-      this.fftWorker = null;
-    }
+    // Recreate FFT worker with updated size (old one terminated inside init)
     this.initFFTWorker();
 
     console.log(`FFT size changed to: ${size}`);
@@ -500,6 +496,12 @@ class AudioEngineClass {
   }
 
   private initFFTWorker(): void {
+    // Terminate any existing worker before creating a new one
+    if (this.fftWorker) {
+      this.fftWorker.terminate();
+      this.fftWorker = null;
+    }
+
     // Optimized FFT worker with pre-computed twiddle factors and Blackman-Harris window
     // This provides ~2x speedup over computing sin/cos in the butterfly loop
     const fftSize = this.currentFFTSize;
@@ -623,6 +625,12 @@ class AudioEngineClass {
   }
 
   private initMultiResWorker(): void {
+    // Terminate any existing worker before creating a new one
+    if (this.multiResWorker) {
+      this.multiResWorker.terminate();
+      this.multiResWorker = null;
+    }
+
     // Multi-resolution FFT worker - uses different FFT sizes per frequency band
     // Sub-bass (8192), Bass (4096), Mids (2048), Highs (1024)
     const workerCode = `

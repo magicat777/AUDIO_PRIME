@@ -208,7 +208,7 @@
   $: displayTruePeak = truePeak + frameCount * 0;
 
   // Subscribe to audio state
-  audioEngine.state.subscribe((state) => {
+  const unsubCapturing = audioEngine.state.subscribe((state) => {
     isCapturing = state.isCapturing;
   });
 
@@ -451,6 +451,7 @@
   onDestroy(() => {
     renderCoordinator.unregister(RENDER_ID);
     unsubAudioState();
+    unsubCapturing();
   });
 </script>
 

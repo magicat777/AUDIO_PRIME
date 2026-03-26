@@ -6,12 +6,12 @@
  * with pro audio capture on macOS and Windows via Electron.
  */
 
-import { AudioCapture } from './AudioCapture';
+import type { AudioCapture } from './AudioCapture';
 import { LinuxCapture } from './LinuxCapture';
 
 // Re-export types for convenience
-export { AudioCapture } from './AudioCapture';
-export { AudioDevice, AudioDataCallback, AudioErrorCallback, AudioCloseCallback } from './types';
+export type { AudioCapture } from './AudioCapture';
+export type { AudioDevice, AudioDataCallback, AudioErrorCallback, AudioCloseCallback } from './types';
 
 /**
  * Creates an AudioCapture instance

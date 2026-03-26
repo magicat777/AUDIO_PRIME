@@ -79,6 +79,9 @@ export class LUFSMeter {
    * Apply K-weighting filter to a sample
    */
   private applyKWeighting(sample: number, channel: number): number {
+    // Guard against NaN/Infinity corrupting filter state permanently
+    if (!Number.isFinite(sample)) return 0;
+
     // Stage 1: Pre-filter (high shelf)
     const preState = this.preFilterState[channel];
     const preOut =

@@ -165,9 +165,13 @@ export class BeatDetector {
   process(spectrum: Float32Array): BeatInfo {
     const now = performance.now();
 
-    // Calculate frame time
+    // Calculate frame time — reject negative or extremely large values,
+    // but allow small positive values (fast loops, tests, high refresh rates)
     if (this.lastProcessTime > 0) {
-      this.frameTimeMs = now - this.lastProcessTime;
+      const dt = now - this.lastProcessTime;
+      if (Number.isFinite(dt) && dt > 0 && dt < 500) {
+        this.frameTimeMs = dt;
+      }
     }
     this.lastProcessTime = now;
 
@@ -348,8 +352,9 @@ export class BeatDetector {
       }
     }
 
-    if (bestLag > 0 && bestCorr > 0.01) {
+    if (bestLag > 0 && bestCorr > 0.01 && this.frameTimeMs > 0) {
       const newBPM = (60 * 1000) / (bestLag * this.frameTimeMs);
+      if (!Number.isFinite(newBPM)) return;
 
       // Check for octave errors (double/half tempo)
       const bpmRatio = newBPM / this.currentBPM;
@@ -467,6 +472,8 @@ export class BeatDetector {
         this.smoothedConfidence += (targetConfidence - this.smoothedConfidence) * decayRate;
       }
 
+      // Clamp to valid range to prevent accumulation errors
+      this.smoothedConfidence = Math.max(0, Math.min(1, this.smoothedConfidence));
       this.tempoConfidence = this.smoothedConfidence;
     }
   }

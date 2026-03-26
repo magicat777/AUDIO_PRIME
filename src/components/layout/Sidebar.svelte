@@ -136,18 +136,41 @@
 
   function handleSavePreset() {
     if (newPresetName.trim() || $layoutPresets.length < 5) {
-      gridLayout.savePreset(newPresetName);
+      gridLayout.savePreset(newPresetName, moduleVisibility.getState());
       newPresetName = '';
       showSavePreset = false;
     }
   }
 
   function handleLoadPreset(index: number) {
-    gridLayout.loadPreset(index);
+    const visibility = gridLayout.loadPreset(index);
+    if (visibility) {
+      moduleVisibility.restore(visibility);
+    }
   }
 
   function handleDeletePreset(index: number) {
     gridLayout.deletePreset(index);
+  }
+
+  async function handleExportPreset(index: number) {
+    if (!window.electronAPI?.presets) return;
+    const presets = gridLayout.getPresets();
+    const preset = presets[index];
+    if (!preset) return;
+    const result = await window.electronAPI.presets.exportPreset(preset);
+    if (result.success) {
+      console.log('Preset exported to:', result.path);
+    }
+  }
+
+  async function handleImportPreset() {
+    if (!window.electronAPI?.presets) return;
+    const result = await window.electronAPI.presets.importPreset();
+    if (result.success && result.data) {
+      const imported = result.data as { name?: string; panels?: Record<string, unknown>; visibility?: Record<string, boolean>; createdAt?: number };
+      gridLayout.importPreset(imported);
+    }
   }
 
   // Split devices by type
@@ -542,6 +565,9 @@
                   <button class="module-item preset-load" on:click={() => handleLoadPreset(index)} title="Load preset">
                     <span class="module-name">{preset.name}</span>
                   </button>
+                  <button class="preset-action-btn" on:click={() => handleExportPreset(index)} title="Export preset">
+                    ↗
+                  </button>
                   <button class="preset-delete-btn" on:click={() => handleDeletePreset(index)} title="Delete preset">
                     ×
                   </button>
@@ -573,6 +599,13 @@
                 {#if $layoutPresets.length >= 5}
                   <span class="badge-small">MAX</span>
                 {/if}
+              </button>
+              <button
+                class="module-item import-preset-btn"
+                on:click={handleImportPreset}
+                disabled={$layoutPresets.length >= 5}
+              >
+                <span class="module-name">Import Preset</span>
               </button>
             {/if}
           </div>
@@ -1114,6 +1147,31 @@
 
   .preset-item .module-item {
     border-radius: 4px 0 0 4px;
+  }
+
+  .preset-action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 0;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .preset-action-btn:hover {
+    background: var(--accent-color);
+    color: #fff;
+  }
+
+  .import-preset-btn {
+    margin-top: 0.25rem;
+    border-style: dashed;
   }
 
   .preset-delete-btn {

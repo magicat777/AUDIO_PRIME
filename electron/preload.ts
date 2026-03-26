@@ -79,6 +79,18 @@ export interface LayoutLoadResult {
   error?: string;
 }
 
+export interface VisibilitySaveResult {
+  success: boolean;
+  path?: string;
+  error?: string;
+}
+
+export interface VisibilityLoadResult {
+  success: boolean;
+  data?: unknown;
+  error?: string;
+}
+
 export interface ElectronAPI {
   audio: {
     getDevices: () => Promise<AudioDevice[]>;
@@ -90,6 +102,7 @@ export interface ElectronAPI {
     toggleFullscreen: () => Promise<boolean>;
     quit: () => Promise<void>;
     onFullscreenChange: (callback: (isFullscreen: boolean) => void) => () => void;
+    onBeforeQuit: (callback: () => void) => () => void;
   };
   system: {
     getMetrics: () => Promise<SystemMetrics>;
@@ -98,6 +111,14 @@ export interface ElectronAPI {
   layout: {
     save: (data: unknown) => Promise<LayoutSaveResult>;
     load: () => Promise<LayoutLoadResult>;
+  };
+  visibility: {
+    save: (data: unknown) => Promise<VisibilitySaveResult>;
+    load: () => Promise<VisibilityLoadResult>;
+  };
+  presets: {
+    exportPreset: (data: unknown) => Promise<{ success: boolean; path?: string; canceled?: boolean; error?: string }>;
+    importPreset: () => Promise<{ success: boolean; data?: unknown; canceled?: boolean; error?: string }>;
   };
   settings: {
     get: (key: string) => Promise<unknown>;
@@ -162,6 +183,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.removeListener('window:fullscreen-change', listener);
       };
     },
+    onBeforeQuit: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on('app:before-quit', listener);
+      return () => {
+        ipcRenderer.removeListener('app:before-quit', listener);
+      };
+    },
   },
   system: {
     getMetrics: () => ipcRenderer.invoke('system:metrics'),
@@ -170,6 +198,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   layout: {
     save: (data: unknown) => ipcRenderer.invoke('layout:save', data),
     load: () => ipcRenderer.invoke('layout:load'),
+  },
+  visibility: {
+    save: (data: unknown) => ipcRenderer.invoke('visibility:save', data),
+    load: () => ipcRenderer.invoke('visibility:load'),
+  },
+  presets: {
+    exportPreset: (data: unknown) => ipcRenderer.invoke('preset:export', data),
+    importPreset: () => ipcRenderer.invoke('preset:import'),
   },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
