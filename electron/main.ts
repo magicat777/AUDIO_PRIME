@@ -16,6 +16,7 @@ import { createServer, Server, IncomingMessage, ServerResponse } from 'http';
 // Platform-agnostic audio capture
 import { createAudioCapture, AudioCapture, AudioDevice } from './audio';
 import { createHash, randomBytes } from 'crypto';
+import { scanPlayers, getNowPlaying, sendCommand, seekTo, setShuffle, setLoopStatus, setActivePlayer } from './mpris/MprisService';
 import { URL } from 'url';
 import * as os from 'os';
 import * as fs from 'fs';
@@ -117,6 +118,14 @@ const IPC = {
   // Preset import/export
   PRESET_EXPORT: 'preset:export',
   PRESET_IMPORT: 'preset:import',
+  // MPRIS2 media player
+  MPRIS_PLAYERS: 'mpris:players',
+  MPRIS_NOW_PLAYING: 'mpris:now-playing',
+  MPRIS_COMMAND: 'mpris:command',
+  MPRIS_SEEK: 'mpris:seek',
+  MPRIS_SHUFFLE: 'mpris:shuffle',
+  MPRIS_LOOP: 'mpris:loop',
+  MPRIS_SET_PLAYER: 'mpris:set-player',
   // Settings persistence
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
@@ -163,8 +172,14 @@ function startAudioCaptureOnDevice(deviceId: string): void {
 
   // Register callbacks
   audioCapture.onData((samples: Float32Array) => {
-    // Send to renderer process
-    mainWindow?.webContents.send(IPC.AUDIO_DATA, Array.from(samples));
+    // Send raw buffer to renderer — Array.from() is too slow at high sample rates
+    // The renderer reconstructs the Float32Array from the ArrayBuffer
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IPC.AUDIO_DATA, samples.buffer.slice(
+        samples.byteOffset,
+        samples.byteOffset + samples.byteLength
+      ));
+    }
   });
 
   audioCapture.onError((error: string) => {
@@ -456,6 +471,60 @@ ipcMain.handle(IPC.PRESET_IMPORT, async () => {
 });
 
 // ============================================
+// MPRIS2 Media Player Integration
+// ============================================
+
+ipcMain.handle(IPC.MPRIS_PLAYERS, async () => {
+  return await scanPlayers();
+});
+
+ipcMain.handle(IPC.MPRIS_NOW_PLAYING, async () => {
+  return await getNowPlaying();
+});
+
+ipcMain.handle(IPC.MPRIS_COMMAND, async (_, command: string) => {
+  return await sendCommand(command as 'Play' | 'Pause' | 'PlayPause' | 'Next' | 'Previous' | 'Stop');
+});
+
+ipcMain.handle(IPC.MPRIS_SEEK, async (_, positionUs: number) => {
+  return await seekTo(positionUs);
+});
+
+ipcMain.handle(IPC.MPRIS_SHUFFLE, async (_, enabled: boolean) => {
+  return await setShuffle(enabled);
+});
+
+ipcMain.handle(IPC.MPRIS_LOOP, async (_, status: string) => {
+  return await setLoopStatus(status as 'None' | 'Track' | 'Playlist');
+});
+
+ipcMain.handle('mpris:art', async (_, fileUrl: string) => {
+  try {
+    // Convert file:// URL to local path and read as base64
+    if (!fileUrl.startsWith('file://')) return '';
+    const filePath = decodeURIComponent(fileUrl.replace('file://', ''));
+    if (!fs.existsSync(filePath)) {
+      console.log('MPRIS art file not found:', filePath);
+      return '';
+    }
+    const data = fs.readFileSync(filePath);
+    const ext = filePath.split('.').pop()?.toLowerCase() || 'jpg';
+    const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+    const result = `data:${mime};base64,${data.toString('base64')}`;
+    console.log(`MPRIS art loaded: ${filePath} (${(data.length / 1024).toFixed(0)}KB)`);
+    return result;
+  } catch (error) {
+    console.error('MPRIS art error:', error);
+    return '';
+  }
+});
+
+ipcMain.handle(IPC.MPRIS_SET_PLAYER, (_, serviceName: string) => {
+  setActivePlayer(serviceName);
+  return true;
+});
+
+// ============================================
 // Settings Persistence (File-based)
 // ============================================
 
@@ -624,7 +693,8 @@ interface AudioSourceInfo {
 
 let cachedAudioInfo: AudioSourceInfo | null = null;
 let lastAudioInfoFetch = 0;
-const AUDIO_INFO_CACHE_MS = 1000; // Cache for 1 second
+let audioInfoFetchInProgress = false;
+const AUDIO_INFO_CACHE_MS = 2000; // Cache for 2 seconds
 
 /**
  * Get audio source metadata from PulseAudio/PipeWire
@@ -632,10 +702,11 @@ const AUDIO_INFO_CACHE_MS = 1000; // Cache for 1 second
 async function getAudioSourceInfo(): Promise<AudioSourceInfo> {
   const now = Date.now();
 
-  // Return cached value if fresh
-  if (cachedAudioInfo && (now - lastAudioInfoFetch) < AUDIO_INFO_CACHE_MS) {
+  // Return cached value if fresh or if a fetch is already in progress
+  if (cachedAudioInfo && ((now - lastAudioInfoFetch) < AUDIO_INFO_CACHE_MS || audioInfoFetchInProgress)) {
     return cachedAudioInfo;
   }
+  audioInfoFetchInProgress = true;
 
   const defaultInfo: AudioSourceInfo = {
     sampleRate: 0,
@@ -662,11 +733,11 @@ async function getAudioSourceInfo(): Promise<AudioSourceInfo> {
   };
 
   try {
-    // Query sink-inputs, sinks, and pw-top in parallel
+    // Query sink-inputs and sinks in parallel. pw-top with a strict timeout.
     const [sinkInputResult, sinksResult, pwTopResult] = await Promise.all([
       execAsync('pactl list sink-inputs 2>/dev/null'),
       execAsync('pactl list sinks 2>/dev/null'),
-      execAsync('pw-top -b -n 2 2>/dev/null').catch(() => ({ stdout: '', stderr: '' })),
+      execAsync('timeout 1 pw-top -b -n 2 2>/dev/null').catch(() => ({ stdout: '', stderr: '' })),
     ]);
 
     // Parse pw-top output for live scheduling metrics
@@ -725,25 +796,58 @@ async function getAudioSourceInfo(): Promise<AudioSourceInfo> {
       }
     }
 
-    // Parse sink-input info - look for active audio streams
+    // Parse all sink-inputs and score them to find the best music stream
     const sinkInputs = sinkInputResult.stdout.split('Sink Input #');
+
+    // System/utility apps to deprioritize
+    const SYSTEM_APPS = ['speech-dispatcher', 'speech-dispatcher-dummy', 'pavucontrol', 'gnome-shell', 'snap'];
+    const MUSIC_ROLES = ['music', 'video', 'game'];
+
+    interface SinkInputCandidate {
+      input: string;
+      appName: string;
+      mediaRole: string;
+      channels: number;
+      sampleRate: number;
+      score: number;
+    }
+
+    const candidates: SinkInputCandidate[] = [];
 
     for (const input of sinkInputs) {
       if (!input.trim()) continue;
-
-      // Extract sample specification (e.g., "float32le 2ch 44100Hz")
       const sampleSpecMatch = input.match(/Sample Specification:\s*(\S+)\s+(\d+)ch\s+(\d+)Hz/);
-
-      // Extract application name
       const appNameMatch = input.match(/application\.name\s*=\s*"([^"]+)"/);
+      const mediaRoleMatch = input.match(/media\.role\s*=\s*"([^"]+)"/);
+      if (!sampleSpecMatch) continue;
 
-      // Extract node latency (e.g., "8192/44100")
+      const appName = appNameMatch ? appNameMatch[1] : 'Unknown';
+      const mediaRole = mediaRoleMatch ? mediaRoleMatch[1].toLowerCase() : '';
+      const channels = parseInt(sampleSpecMatch[2], 10);
+      const sampleRate = parseInt(sampleSpecMatch[3], 10);
+
+      // Score: higher is better
+      let score = 0;
+      if (MUSIC_ROLES.includes(mediaRole)) score += 100;
+      if (channels >= 2) score += 50;
+      if (sampleRate > 44100) score += 30;
+      if (SYSTEM_APPS.some(s => appName.toLowerCase().includes(s))) score -= 200;
+      // Parec is our own capture — skip it
+      if (appName.toLowerCase() === 'parec' || appName.toLowerCase() === 'audio_prime' || appName.toLowerCase() === 'audio-prime') score -= 300;
+
+      candidates.push({ input, appName, mediaRole, channels, sampleRate, score });
+    }
+
+    // Sort by score descending, pick the best
+    candidates.sort((a, b) => b.score - a.score);
+    const bestInput = candidates[0]?.input;
+
+    if (bestInput) {
+      const input = bestInput;
+      const sampleSpecMatch = input.match(/Sample Specification:\s*(\S+)\s+(\d+)ch\s+(\d+)Hz/);
+      const appNameMatch = input.match(/application\.name\s*=\s*"([^"]+)"/);
       const latencyMatch = input.match(/node\.latency\s*=\s*"(\d+)\/(\d+)"/);
-
-      // Extract the target sink index
       const sinkMatch = input.match(/Sink:\s*(\d+)/);
-
-      // Extract media role
       const mediaRoleMatch = input.match(/media\.role\s*=\s*"([^"]+)"/);
 
       if (sampleSpecMatch) {
@@ -774,7 +878,7 @@ async function getAudioSourceInfo(): Promise<AudioSourceInfo> {
         const isResampling = outputSampleRate > 0 && outputSampleRate !== sampleRate;
 
         // Look up live PipeWire metrics by matching pw-top node names
-        const appName = appNameMatch ? appNameMatch[1] : 'Unknown';
+        const appName = candidates[0]?.appName ?? (appNameMatch ? appNameMatch[1] : 'Unknown');
         const appNameLower = appName.toLowerCase();
         const sinkNodeName = sink?.nodeName ?? '';
         let pwStream: { quantum: number; rate: number; waitUs: number; busyUs: number } | undefined;
@@ -823,6 +927,7 @@ async function getAudioSourceInfo(): Promise<AudioSourceInfo> {
           pipelineLatencyMs,
         };
         lastAudioInfoFetch = now;
+        audioInfoFetchInProgress = false;
         return cachedAudioInfo;
       }
     }
@@ -830,11 +935,13 @@ async function getAudioSourceInfo(): Promise<AudioSourceInfo> {
     // No active sink-inputs found
     cachedAudioInfo = defaultInfo;
     lastAudioInfoFetch = now;
+    audioInfoFetchInProgress = false;
     return defaultInfo;
   } catch {
     // pactl not available or failed
     cachedAudioInfo = defaultInfo;
     lastAudioInfoFetch = now;
+    audioInfoFetchInProgress = false;
     return defaultInfo;
   }
 }

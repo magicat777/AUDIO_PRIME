@@ -97,7 +97,7 @@ export interface ElectronAPI {
     start: (deviceId: string) => Promise<boolean>;
     stop: () => Promise<boolean>;
     getSampleRate: () => Promise<number>;
-    onData: (callback: (samples: number[]) => void) => () => void;
+    onData: (callback: (samples: Float32Array) => void) => () => void;
   };
   window: {
     toggleFullscreen: () => Promise<boolean>;
@@ -124,6 +124,16 @@ export interface ElectronAPI {
   settings: {
     get: (key: string) => Promise<unknown>;
     set: (key: string, value: unknown) => Promise<void>;
+  };
+  mpris: {
+    getPlayers: () => Promise<{ name: string; identity: string }[]>;
+    getNowPlaying: () => Promise<unknown>;
+    command: (cmd: string) => Promise<boolean>;
+    seek: (positionUs: number) => Promise<boolean>;
+    shuffle: (enabled: boolean) => Promise<boolean>;
+    loop: (status: string) => Promise<boolean>;
+    setPlayer: (serviceName: string) => Promise<boolean>;
+    getArt: (fileUrl: string) => Promise<string>;
   };
   spotify: {
     connect: () => Promise<{ success: boolean; error?: string }>;
@@ -162,12 +172,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     start: (deviceId: string) => ipcRenderer.invoke('audio:start', deviceId),
     stop: () => ipcRenderer.invoke('audio:stop'),
     getSampleRate: () => ipcRenderer.invoke('audio:sample-rate'),
-    onData: (callback: (samples: number[]) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, samples: number[]) => {
-        callback(samples);
+    onData: (callback: (samples: Float32Array) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, buffer: ArrayBuffer) => {
+        callback(new Float32Array(buffer));
       };
       ipcRenderer.on('audio:data', listener);
-      // Return cleanup function
       return () => {
         ipcRenderer.removeListener('audio:data', listener);
       };
@@ -208,6 +217,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   presets: {
     exportPreset: (data: unknown) => ipcRenderer.invoke('preset:export', data),
     importPreset: () => ipcRenderer.invoke('preset:import'),
+  },
+  mpris: {
+    getPlayers: () => ipcRenderer.invoke('mpris:players'),
+    getNowPlaying: () => ipcRenderer.invoke('mpris:now-playing'),
+    command: (cmd: string) => ipcRenderer.invoke('mpris:command', cmd),
+    seek: (positionUs: number) => ipcRenderer.invoke('mpris:seek', positionUs),
+    shuffle: (enabled: boolean) => ipcRenderer.invoke('mpris:shuffle', enabled),
+    loop: (status: string) => ipcRenderer.invoke('mpris:loop', status),
+    setPlayer: (serviceName: string) => ipcRenderer.invoke('mpris:set-player', serviceName),
+    getArt: (fileUrl: string) => ipcRenderer.invoke('mpris:art', fileUrl),
   },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),

@@ -17,6 +17,7 @@
   import FrequencyBandsPanel from '../meters/FrequencyBandsPanel.svelte';
   import DebugPanel from '../panels/DebugPanel.svelte';
   import SpotifyPanel from '../spotify/SpotifyPanel.svelte';
+  import MediaPlayerPanel from '../media/MediaPlayerPanel.svelte';
   import Visualization3DPanel from '../panels/Visualization3DPanel.svelte';
   import PanelGearMenu from '../ui/PanelGearMenu.svelte';
   import { audioEngine } from '../../core/AudioEngine';
@@ -540,6 +541,14 @@
       {#if $moduleVisibility.spotify}
         <DraggablePanel panelId="spotify" title="Spotify">
           <SpotifyPanel />
+          <PanelGearMenu slot="titleControls" groups={[]} />
+        </DraggablePanel>
+      {/if}
+
+      <!-- Media Player (MPRIS2) -->
+      {#if $moduleVisibility.mediaPlayer}
+        <DraggablePanel panelId="mediaPlayer" title="Media Player">
+          <MediaPlayerPanel />
           <PanelGearMenu slot="titleControls" groups={[]} />
         </DraggablePanel>
       {/if}

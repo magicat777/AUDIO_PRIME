@@ -20,6 +20,7 @@ export interface ModuleVisibility {
   frequencyBands: boolean;
   debug: boolean;
   spotify: boolean;
+  mediaPlayer: boolean;
   // 3D Visualizations (v1.2)
   cylindricalBars: boolean;
   waterfall3d: boolean;
@@ -43,6 +44,7 @@ const defaultVisibility: ModuleVisibility = {
   frequencyBands: true, // Frequency band analyzer
   debug: true,         // Toggleable
   spotify: true,       // Spotify integration
+  mediaPlayer: true,   // MPRIS2 media player (Strawberry, mpv, etc.)
   // 3D Visualizations - opt-in by default
   cylindricalBars: false,
   waterfall3d: false,

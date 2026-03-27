@@ -79,6 +79,7 @@ const defaultLayouts: Record<string, Omit<PanelLayout, 'id'>> = {
   bpmTempo: { x: 0, y: 41, width: 13, height: 14, zIndex: 1, locked: false },
   oscilloscope: { x: 13, y: 41, width: 33, height: 14, zIndex: 1, locked: false },
   spotify: { x: 46, y: 41, width: 25, height: 27, zIndex: 1, locked: false },
+  mediaPlayer: { x: 46, y: 41, width: 25, height: 27, zIndex: 1, locked: false },
 
   // Bottom row
   voiceDetection: { x: 0, y: 55, width: 46, height: 9, zIndex: 1, locked: false },

@@ -199,7 +199,7 @@
     dispatch('close');
   }
 
-  function toggleModule(module: 'spectrum' | 'vuMeters' | 'bassDetail' | 'waterfall' | 'lufsMetering' | 'bpmTempo' | 'voiceDetection' | 'stereoCorrelation' | 'goniometer' | 'oscilloscope' | 'frequencyBands' | 'debug' | 'spotify' | 'cylindricalBars' | 'waterfall3d' | 'frequencySphere' | 'stereoSpace3d' | 'tunnel' | 'terrain') {
+  function toggleModule(module: 'spectrum' | 'vuMeters' | 'bassDetail' | 'waterfall' | 'lufsMetering' | 'bpmTempo' | 'voiceDetection' | 'stereoCorrelation' | 'goniometer' | 'oscilloscope' | 'frequencyBands' | 'debug' | 'spotify' | 'mediaPlayer' | 'cylindricalBars' | 'waterfall3d' | 'frequencySphere' | 'stereoSpace3d' | 'tunnel' | 'terrain') {
     moduleVisibility.toggle(module);
   }
 
@@ -454,6 +454,10 @@
             <button class="module-item" class:active={$moduleVisibility.spotify} on:click={() => toggleModule('spotify')}>
               <span class="module-name">Spotify</span>
               <span class="led-indicator" class:on={$moduleVisibility.spotify}></span>
+            </button>
+            <button class="module-item" class:active={$moduleVisibility.mediaPlayer} on:click={() => toggleModule('mediaPlayer')}>
+              <span class="module-name">Media Player</span>
+              <span class="led-indicator" class:on={$moduleVisibility.mediaPlayer}></span>
             </button>
           </div>
         {/if}

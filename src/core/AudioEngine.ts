@@ -868,7 +868,7 @@ class AudioEngineClass {
 
     // Set up audio data listener
     this.audioCleanup = window.electronAPI.audio.onData((samples) => {
-      this.processAudioData(new Float32Array(samples));
+      this.processAudioData(samples);
     });
 
     // Start capture (LinuxCapture detects sample rate async before spawning parec)

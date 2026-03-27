@@ -1,5 +1,16 @@
 // Global type declarations for AUDIO_PRIME
 
+// Asset imports (Vite handles these as URLs)
+declare module '*.png' {
+  const src: string;
+  export default src;
+}
+
+declare module '*.jpg' {
+  const src: string;
+  export default src;
+}
+
 export interface AudioDevice {
   id: string;
   name: string;
@@ -95,13 +106,32 @@ export interface LayoutLoadResult {
   error?: string;
 }
 
+export interface MprisNowPlaying {
+  available: boolean;
+  playerName: string;
+  status: 'Playing' | 'Paused' | 'Stopped' | 'Unknown';
+  title: string;
+  artist: string;
+  album: string;
+  artUrl: string;
+  durationMs: number;
+  positionMs: number;
+  bitrate: number;
+  fileUrl: string;
+  year: number;
+  trackNumber: number;
+  shuffle: boolean;
+  loopStatus: string;
+  volume: number;
+}
+
 export interface ElectronAPI {
   audio: {
     getDevices: () => Promise<AudioDevice[]>;
     start: (deviceId: string) => Promise<boolean>;
     stop: () => Promise<boolean>;
     getSampleRate: () => Promise<number>;
-    onData: (callback: (samples: number[]) => void) => () => void;
+    onData: (callback: (samples: Float32Array) => void) => () => void;
   };
   window: {
     toggleFullscreen: () => Promise<boolean>;
@@ -124,6 +154,16 @@ export interface ElectronAPI {
   presets: {
     exportPreset: (data: unknown) => Promise<{ success: boolean; path?: string; canceled?: boolean; error?: string }>;
     importPreset: () => Promise<{ success: boolean; data?: unknown; canceled?: boolean; error?: string }>;
+  };
+  mpris: {
+    getPlayers: () => Promise<{ name: string; identity: string }[]>;
+    getNowPlaying: () => Promise<MprisNowPlaying>;
+    command: (cmd: string) => Promise<boolean>;
+    seek: (positionUs: number) => Promise<boolean>;
+    shuffle: (enabled: boolean) => Promise<boolean>;
+    loop: (status: string) => Promise<boolean>;
+    setPlayer: (serviceName: string) => Promise<boolean>;
+    getArt: (fileUrl: string) => Promise<string>;
   };
   settings: {
     get: (key: string) => Promise<unknown>;
