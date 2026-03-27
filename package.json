@@ -95,8 +95,7 @@
     "linux": {
       "target": [
         "AppImage",
-        "deb",
-        "rpm"
+        "deb"
       ],
       "icon": "assets/icon.png",
       "category": "AudioVideo;Audio;Music",
