@@ -41,8 +41,8 @@ AUDIO_PRIME is a professional-grade real-time audio spectrum analyzer and meteri
 ### Audio Pipeline
 
 ```
-System Audio → Web Audio API → FFT Analysis → Processing Pipeline → Display
-              (48kHz stereo)    (4096-point)   (8-stage)           (60fps)
+System Audio → parec capture → FFT Analysis → Processing Pipeline → Display
+          (native rate stereo)  (4096-point)   (8-stage)           (60fps)
 ```
 
 ---
@@ -400,7 +400,7 @@ The ITU-R BS.1770 K-weighting filter applies two stages:
 - Revised low-frequency B-weighting
 - Attenuates frequencies below 100 Hz
 
-**Filter Coefficients (48kHz):**
+**Filter Coefficients (rate-adaptive, shown for 48kHz):**
 ```
 Pre-filter:
   b = [1.53512485958697, -2.69169618940638, 1.19839281085285]
@@ -959,7 +959,7 @@ No listening history, playlists, or personal data is accessed or stored.
 
 | Specification | Value |
 |---------------|-------|
-| Sample Rate | 48,000 Hz |
+| Sample Rate | 44,100 - 192,000 Hz (dynamic) |
 | FFT Size (Standard) | 4,096 points |
 | FFT Size (Multi-Res) | 1,024 - 8,192 points |
 | Frequency Resolution | 11.7 Hz (standard) |

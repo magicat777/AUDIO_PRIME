@@ -1,8 +1,8 @@
 # AUDIO_PRIME
 
-> Professional Real-Time Audio Spectrum Analyzer & Visualizer for Linux
+> *Breaking audio into its prime components*
 
-A modern, high-performance audio analysis application built with Electron + Svelte 5, featuring studio-grade metering, advanced visualizations, and Spotify integration.
+A professional real-time audio spectrum analyzer and visualizer for Linux, built with Electron + Svelte 5. Features studio-grade metering, Hi-Res audio support up to 192kHz, 3D visualizations, MPRIS2 media player integration, and Spotify connectivity.
 
 ![Version](https://img.shields.io/badge/version-1.2.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux-orange)
@@ -80,6 +80,18 @@ For cross-platform pro audio applications, native development (Swift/C++) is the
 - **Tunnel Effect** - Forward-scrolling concentric rings (lines/filled/both render modes)
 - **Terrain Landscape** - Fly-over spectrum terrain with fog depth and multi-pass smoothing
 
+### Hi-Res Audio Support (v1.3.0)
+- **Dynamic Sample Rate** - Auto-detects and captures at native device rate (44.1kHz to 192kHz)
+- **Hi-Res Audio Badge** - Official logo displayed when playing content above 44.1kHz
+- **Rate-Aware Analysis** - FFT, LUFS K-weighting filters, and beat detection auto-reconfigure for the active sample rate
+- **Zero-Copy IPC** - ArrayBuffer transfer for high-throughput audio data at 192kHz
+
+### Media Player Integration (v1.3.0)
+- **MPRIS2 Panel** - Connects to Strawberry, mpv, VLC, Firefox, or any MPRIS2 player via D-Bus
+- **Album Art** - Loads cover art from player cache with automatic display
+- **Playback Controls** - Play/Pause, Previous, Next, Seek, Shuffle, Loop
+- **Bitrate Display** - Shows live bitrate (e.g., 4.3 Mbps for 192kHz FLAC)
+
 ### Spotify Integration
 - **Now Playing** - Track, artist, album display with album art
 - **Playback Controls** - Play/Pause, Previous, Next, Seek
@@ -96,7 +108,6 @@ For cross-platform pro audio applications, native development (Swift/C++) is the
 Download the latest release from [Releases](https://github.com/magicat777/AUDIO_PRIME/releases):
 - **AppImage** - Universal Linux (recommended, no install required)
 - **.deb** - Ubuntu, Debian, Pop!_OS, Linux Mint
-- **.rpm** - Fedora, RHEL, CentOS, openSUSE
 
 ### Linux Installation
 
@@ -129,7 +140,7 @@ sudo rpm -i AUDIO_PRIME-*-linux-x86_64.rpm
 ### Build from Source
 
 ```bash
-# Prerequisites: Node.js 18+ and npm
+# Prerequisites: Node.js 22 LTS and npm
 
 # Clone repository
 git clone https://github.com/magicat777/AUDIO_PRIME.git

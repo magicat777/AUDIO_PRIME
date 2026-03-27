@@ -12,11 +12,12 @@
 - **Audio**: PulseAudio or PipeWire with `parec` command
 
 ### Recommended Requirements
-- **OS**: Ubuntu 22.04+ / Fedora 38+
+- **OS**: Ubuntu 24.04+ / Fedora 40+
 - **CPU**: Quad-core 2.5 GHz+
 - **RAM**: 8 GB
 - **Display**: 1920x1080 or higher
-- **Audio**: PipeWire (modern Linux distributions)
+- **Audio**: PipeWire with WirePlumber (required for Hi-Res audio)
+- **Audio Interface**: USB DAC supporting 96kHz/192kHz (e.g., Focusrite Scarlett 2i2)
 
 ---
 
@@ -131,7 +132,7 @@ AUDIO_PRIME includes optional Spotify integration. See the [User Guide](USER_GUI
 ## Build from Source
 
 ### Prerequisites
-- Node.js 18+
+- Node.js 22 LTS (install via nvm: `nvm install 22`)
 - npm 9+
 - Git
 - PulseAudio or PipeWire
@@ -179,6 +180,51 @@ rm -rf ~/.config/audio-prime
 ```
 
 ---
+
+## Hi-Res Audio Configuration (Optional)
+
+AUDIO_PRIME supports capture at native device sample rates up to 192kHz. To enable Hi-Res audio:
+
+### 1. PipeWire — Allow High Sample Rates
+
+Create `~/.config/pipewire/pipewire.conf.d/10-hidef-audio.conf`:
+```conf
+context.properties = {
+    default.clock.rate = 48000
+    default.clock.allowed-rates = [ 44100 48000 88200 96000 176400 192000 ]
+    default.clock.quantum = 256
+    default.clock.min-quantum = 64
+    default.clock.max-quantum = 2048
+}
+```
+
+### 2. WirePlumber — Enable Dynamic Rate Switching
+
+Create `~/.config/wireplumber/wireplumber.conf.d/50-hidef-device.conf` (replace the `node.name` match with your audio device):
+```conf
+monitor.alsa.rules = [
+  {
+    matches = [
+      { node.name = "~alsa_output.usb-*" }
+    ]
+    actions = {
+      update-props = {
+        api.alsa.multirate = true
+        api.alsa.period-size = 256
+        api.alsa.period-num = 4
+      }
+    }
+  }
+]
+```
+
+### 3. Restart PipeWire
+```bash
+systemctl --user restart wireplumber pipewire pipewire-pulse
+```
+
+### 4. Verify
+Play a Hi-Res file (e.g., 192kHz FLAC via Strawberry) and check the AUDIO_PRIME debug panel — Stream Rate and Device Rate should both show the native rate with "No (native)" resampling.
 
 ## Troubleshooting
 
